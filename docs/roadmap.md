@@ -1,0 +1,181 @@
+# TopoX 项目画像与方向
+
+> 本文档是北极星和护栏：讲清楚"这个项目应该成为什么样、绝不能变成什么样"。
+> 具体怎么做、按什么顺序做，由执行者自行决定。唯一的强制章节是文末的验收矩阵。
+
+## 项目概述
+
+TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎。它服务于这样的场景：一个网络服务商（最初的锚定用户是 teamsacs / teamsedge 的维护者）的每个产品交付都对应一套网络拓扑——对外交付一份清单，对内业务、资源、运维部门需要同一份数据的直观结构视图，并且整个流程要适合 AI 辅助。
+
+它不是画图软件。拓扑是真实数据（纯关系：节点、边、组、属性），编辑器只是数据之上的一个视图。一切修改——用户拖拽、AI 提案、文件导入——都以**可逆的 GraphDiff** 进入系统，因此撤销、审计、回放是结构性收益而非附加功能。运行态（状态、指标、流量）是叠加在文档之上的独立层，永不写入文档。
+
+- 架构图
+
+```text
+                 ┌──────────────────────────────────────────────┐
+                 │                 apps/studio                  │
+                 │  Canvas · Inventory · JSON · Inspector       │
+                 │  AI 面板 · Timeline DVR · 导入导出 · 模拟器   │
+                 └────────┬──────────────┬─────────────┬────────┘
+                          │              │             │
+                ┌─────────▼────┐  ┌──────▼─────┐ ┌─────▼────────┐
+                │ @topox/editor│  │ @topox/dsl │ │@topox/interop│
+                │ React Flow   │  │ DSL → Diff │ │ YAML·Mermaid │
+                │ doc 进 diff 出│  │ 编译器      │ │ 双向互转      │
+                └─────────┬────┘  └──────┬─────┘ └─────┬────────┘
+                          └──────────────┼─────────────┘
+                                  ┌──────▼───────┐
+                                  │ @topox/core  │  零运行时依赖
+                                  │ Graph · Diff · History │
+                                  │ Runtime · Timeline · Grouping │
+                                  └──────────────┘
+
+编辑数据流（宪法）：Prompt → DSL → GraphDiff → Preview → 用户确认 → Apply
+运行态数据流：外部系统(teamsacs/teamsedge/…) → RuntimeEvent（按 Node.ref 寻址）
+              → 叠加渲染 + Timeline 记录，永不进入文档与历史
+```
+
+## 项目画像（目标状态）
+
+做好之后，TopoX 是这样的：
+
+- **一份数据，多个视图。** 同一个 `TopoDoc` 能同时支撑：对外的交付清单（Inventory/CSV）、对内的结构画布（Canvas）、机器可读的交换格式（JSON/YAML/Mermaid）。任何一个视图的变化都不需要"重新画一遍"。
+- **AI 是一等公民，但永远隔着一层 Diff。** 自然语言可以生成、修改拓扑，但 AI 的输出统一是 DSL → GraphDiff，经过预览和用户确认才落地。用户对 AI 提案的信任来自"可预览、可拒绝、可撤销"，而不是来自模型本身。
+- **运行态让拓扑活起来。** 接入真实系统后，节点有状态灯、指标行，边有流量动画；出问题时能沿时间轴回放到故障发生的那一刻。Runtime 是纯叠加层：断开数据源，文档完好如初。
+- **内核十年稳定。** 内核只认识节点、边、属性、状态；`net-router` 对内核是不透明字符串。新协议、新 AI 框架、新领域出现时，通过 type/attrs/schema/插件扩展，内核不重构。
+- **所有状态可序列化、可回放。** 文档、diff 历史、运行事件都是 JSON 安全的值；`undefined` 不过线，patch 里 `null` 表示删字段。
+
+品质优先级（冲突时的裁决顺序）：
+
+1. **数据正确性 > 一切。** 宁可拒绝一次编辑，也不让文档进入非法状态；diff 应用失败必须无部分残留。
+2. **模型简洁 > 功能数量。** 核心对象只有 Graph/Node/Edge/Group/View/RuntimeState；新需求先问"能否用 attrs/type/扩展表达"，再考虑动模型。
+3. **编辑手感 > 渲染华丽。** 拖拽必须流畅（交互帧不碰文档），视觉效果让位于操作延迟。
+4. **可控的 AI > 聪明的 AI。** 提案-确认流程的确定性优先于生成质量。
+
+## 当前能力清单
+
+以下能力均已实现并有代码/测试支撑（48 个测试全绿，`npm test`）：
+
+- **内核数据模型与可逆 Diff 引擎**
+
+  Graph/Node/Edge/Group/View/TopoDoc 类型与不变式；`applyDiff`/`invertDiff`；失败即抛 `DiffConflictError` 且无部分状态泄漏。证据：`packages/core/src/{types,diff}.ts`，`packages/core/tests/core.test.ts`（applyDiff / invertDiff / makeNodeUpdate）。
+
+- **历史与撤销重做**
+
+  `History` 基于可逆 diff 实现 undo/redo 与操作记录。证据：`packages/core/src/history.ts`，core.test.ts（History）。
+
+- **文档校验**
+
+  重复 id、悬空边、组嵌套循环、多父成员等结构性错误检测。证据：`packages/core/src/validate.ts`，core.test.ts（validate）。
+
+- **运行态叠加与时间回放**
+
+  `RuntimeState` + `applyRuntimeEvent`（按 `Node.ref` 寻址优先）；`RuntimeTimeline` 支持 DVR 式回放（二分定位 + checkpoint 重放 + 事件折叠）。证据：`packages/core/src/{runtime,timeline}.ts`，core.test.ts（runtime overlay / runtime timeline）。
+
+- **React Flow 编辑器（受控视图）**
+
+  doc 进、diff 出；拖拽走本地状态松手一次提交；dagre 自动布局以 diff 形式产出；组可视化（展开=派生包围盒容器、折叠=代理节点、跨边界边重定向合并、嵌套父盖子）。证据：`packages/editor/src/{TopoCanvas,convert,layout}.tsx|ts`，`packages/editor/tests/editor.test.ts`（group projection 等）。
+
+- **DSL 编译器（AI 输出格式）**
+
+  行导向 DSL 逐行容错编译为 GraphDiff；`docToDsl` 反向序列化；附 LLM 提示指南。证据：`packages/dsl/src/`，`packages/dsl/tests/dsl.test.ts`。
+
+- **YAML / Mermaid 互转**
+
+  YAML 全保真往返；Mermaid flowchart 导出（嵌套 subgraph）与容错子集导入。证据：`packages/interop/src/{yaml,mermaid}.ts`，`packages/interop/tests/interop.test.ts`。
+
+- **Studio 演示应用**
+
+  Canvas / Inventory / JSON 三视图；Inspector（节点/边/组的基础属性、自定义 attrs、JSON 整体编辑，草稿式提交）；AI 面板（Prompt → DSL → Diff → Preview → Apply，OpenAI 兼容端点）；模拟器 + Timeline DVR 条；JSON/YAML/Mermaid 导入导出 + CSV 清单导出；搜索过滤。证据：`apps/studio/src/`。**注意：studio 目前无自动化测试**（见验收矩阵）。
+
+- **搜索**
+
+  按名称/标签/类型/属性过滤节点。证据：`packages/core/src/inventory.ts`（`searchNodes`），core.test.ts 中含字段匹配断言。
+
+## 非目标（铁律）
+
+除非用户明确修改边界，以下规则不可越过，也不得转写为"以后会做"：
+
+- **不做 Office、PPT、Visio、XMind、白板、甘特图、UML 全家桶、BPMN 全家桶、数据库设计器、CAD。** TopoX 只关心"关系"，不关心通用绘图与文档排版。
+- **内核不引入任何业务概念。** 内核代码中不得出现 Kubernetes、RouterOS、Redis、MCP 等领域词汇的语义分支；领域差异只能通过 type 字符串、attrs、schema 与插件表达。
+- **Graph 不存几何。** 坐标、尺寸、视口只属于 View；任何把 x/y 写进 Node 的改动都是违宪。
+- **Runtime 不进文档。** 运行态状态、指标、事件不得写入 TopoDoc、不得进入 diff 历史、不得被序列化进文档导出。
+- **AI 不直接操作画布或文档。** 所有 AI 修改必须走 DSL → GraphDiff → Preview → 确认 → Apply；不存在"AI 直接 setState"的通道。
+- **绕过 Diff 的修改通道不允许存在。** 任何入口（UI、导入、AI、未来的协作）都必须以 GraphDiff 落地（整文档替换式导入除外，且导入必须先过校验）。
+- **内核保持零运行时依赖。** `@topox/core` 不引入任何 npm 运行时依赖；序列化格式保持纯 JSON。
+
+## 方向与意图
+
+以下描述想去的地方和原因，不规定顺序与实现方式：
+
+- **真实运行态接入（完成 Phase 2）**
+
+  当前运行态由内置模拟器驱动。目标是定义一个稳定的事件接入契约（如 SSE/WebSocket 上的 RuntimeEvent 流），让 teamsacs/teamsedge 这类真实系统能按 `Node.ref` 推送状态与指标。服务于"运行态让拓扑活起来"的画像；契约必须保持"Runtime 不进文档"的铁律。
+
+- **Trace 与 Snapshot**
+
+  点击节点可下钻日志、事件、指标历史；运行态可保存/加载快照。服务于运维部门的故障定位场景，是 Timeline 回放的自然延伸。
+
+- **真实数据端到端验证**
+
+  用 teamsacs/teamsedge 的真实拓扑数据（清单规模、命名习惯、ref 语义）走一遍导入→编辑→导出→运行态全流程，以此校准模型边界与性能，而不是靠 demo 数据自证。
+
+- **Phase 3：Agent、协作与插件**
+
+  Agent 自动生成拓扑、修复布局、优化结构、发现异常——全部以 diff 提案形式进入既有确认管线；多人协作（实时编辑、冲突合并、评论、锁）建立在"一切皆 diff"之上；插件体系（节点/布局/导入导出/主题/Inspector/AI 插件）是内核"只认关系"承诺的兑现方式。
+
+- **更多交换格式**
+
+  GraphML、DOT 等格式的导入导出，服务于与既有网络工具生态的互通。
+
+- **编辑器纵深**
+
+  搜索结果画布高亮与定位跳转、对齐/吸附、节点复制、锁定等编辑手感增强。服务于"编辑手感 > 渲染华丽"的品质排序。
+
+## 完成的样子
+
+> 当以下可观察结果出现时，对应的方向才算真正达成：
+
+- **锚定用户可以退役 Webix Diagram。** teamsacs/teamsedge 的拓扑用 TopoX 描述、编辑、交付清单，且没有为迁移在内核里加过任何业务特判。
+- **一次真实故障可以被回放。** 接入真实数据源后，运维可以把时间轴拖回故障时刻，看到当时的节点状态与边流量。
+- **AI 提案零信任落地。** 任何 AI 生成的修改在落地前都能被预览为 diff、被拒绝、落地后能被一键撤销；不存在例外通道。
+- **核心数据流有自动化测试守护。** 内核 diff/回放/校验的回归能在 CI 中被挡下（当前由各包 vitest 承担；引入 CI 与浏览器级 E2E 的方式由执行者选择）。
+- **文档-代码一致。** README 与本画像描述的能力均可在代码中找到对应实现；冲突时以代码和可运行测试为准，并回改文档。
+
+## 验收矩阵（业务能力覆盖矩阵）
+
+> 覆盖底线（硬性规定，不得降级为建议）：
+>
+> 1. 每个一级功能至少有一条 Happy Path E2E。
+> 2. 每个高风险功能至少覆盖一条失败路径。
+> 3. 每个涉及权限的功能至少验证两种角色。
+> 4. 每个会修改系统状态的操作至少验证一次失败后的恢复或回滚。
+> 5. 每次新增一级业务功能，必须同步新增对应的 E2E 并更新本矩阵。
+>
+> 说明：TopoX 目前是单用户本地工具，无权限模型，"权限角色覆盖"列统一为不适用；引入协作后该列必须重新评估。"E2E"在当前形态下指贯穿 studio UI 或至少贯穿"包边界组合"的端到端验证；仅有内核单元测试不算 E2E。
+
+| 一级功能 | 风险级别 | Happy Path E2E | 失败路径 | 权限角色覆盖 | 失败恢复/回滚 | 证据（测试路径/用例） |
+| --- | --- | --- | --- | --- | --- | --- |
+| 图编辑（节点/边增删改、移动、连线） | 中 | ❌ 缺口（无 UI 级 E2E） | ✅ diff 冲突拒绝 | 不适用 | ✅ invertDiff/undo | `packages/core/tests/core.test.ts` applyDiff/invertDiff/History；`packages/editor/tests/editor.test.ts` toFlow |
+| 撤销/重做 | 中 | ❌ 缺口（无 UI 级 E2E） | ✅ 空栈边界 | 不适用 | ✅ 本身即回滚机制 | `packages/core/tests/core.test.ts` History |
+| 分组（创建/解组/折叠/展开/嵌套） | 中 | ❌ 缺口（无 UI 级 E2E） | ✅ 组循环/多父校验 | 不适用 | ✅ 组操作走可逆 diff | `packages/editor/tests/editor.test.ts` group projection；`packages/core/tests/core.test.ts` validate |
+| AI/DSL 管线（Prompt→DSL→Diff→Preview→Apply） | 高（外部 API 副作用 + 批量改文档） | ❌ 缺口（编译有测试，预览确认流程无 E2E） | ✅ DSL 容错逐行报错 | 不适用 | ✅ Apply 后可 undo | `packages/dsl/tests/dsl.test.ts` compileDsl/tokenize |
+| 导入（JSON/YAML/Mermaid，整文档替换） | 高（可整体覆盖用户文档） | ❌ 缺口（解析有测试，studio 导入分发无测试） | 待核验（导入前 validateDoc 拒绝逻辑在 `apps/studio/src/App.tsx` importFile，无测试） | 不适用 | ❌ 缺口（导入替换 History，无恢复验证） | `packages/interop/tests/interop.test.ts` yaml/mermaid import |
+| 导出（JSON/YAML/Mermaid/CSV） | 低（只读投影） | ❌ 缺口（序列化有测试，下载链路无 E2E） | 不适用（只读，无状态变更） | 不适用 | 不适用（只读） | `packages/interop/tests/interop.test.ts` yaml/mermaid export；core.test.ts inventory projection |
+| 运行态叠加（状态/指标/活跃边） | 中 | ❌ 缺口（无 UI 级 E2E） | ✅ 未知 ref 事件安全忽略 | 不适用 | ✅ 叠加层可整体清除，文档不受影响 | `packages/core/tests/core.test.ts` runtime overlay；`packages/editor/tests/editor.test.ts` runtime overlay projection |
+| Timeline 回放 | 低 | ❌ 缺口（无 UI 级 E2E） | ✅ 时间戳单调性 clamp | 不适用 | 不适用（只读回放，不改文档） | `packages/core/tests/core.test.ts` runtime timeline |
+| Inspector 属性编辑（基础/attrs/JSON） | 中 | ❌ 缺口（studio 组件无测试） | 待核验（JSON 编辑的 id 不变/端点校验在 `apps/studio/src/Inspector.tsx`，无测试） | 不适用 | ✅ 编辑走 update diff，可 undo | 内核层 `core.test.ts` makeNodeUpdate；UI 层无 |
+| 搜索（名称/标签/类型/属性） | 低 | ❌ 缺口（无 UI 级） | 不适用（只读过滤） | 不适用 | 不适用（只读） | `packages/core/tests/core.test.ts` searchNodes 断言 |
+| 自动布局（dagre） | 中 | ❌ 缺口（无 UI 级 E2E） | 待核验 | 不适用 | ✅ 布局以 diff 产出，可 undo | `packages/editor/tests/editor.test.ts` autoLayoutDiff（含幂等性） |
+
+缺口的最低期望：
+
+- **UI 级 E2E 全面缺失**是当前最大质量缺口。最低期望：为"图编辑、AI 管线 Apply、导入"三条改状态主链路各建一条贯穿 studio 的 E2E（工具自选，如 Playwright），其余功能可后续补齐。
+- **导入无失败恢复验证**：最低期望是验证"导入非法文档被拒绝后，原文档与历史完好"。
+- 各"待核验"项在补测试或人工确认后更新本矩阵。
+
+## 维护规则
+
+- 代码与本文档冲突时，以代码和可运行测试为准，冲突处标注"需修订"。
+- 新需求先对照"非目标"检查；违反则先与用户确认是否修改铁律。
+- 新增/下线一级功能时同步增删矩阵行；日常任务进度不写入本文档。

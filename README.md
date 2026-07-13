@@ -43,7 +43,11 @@ npm test        # run all tests
 npm run dev     # start studio at http://localhost:5173
 ```
 
+Quality floor: every top-level feature needs a happy-path E2E, and state-mutating features need failure/rollback coverage — see the [acceptance matrix](docs/roadmap.md#验收矩阵业务能力覆盖矩阵) in the roadmap. Agent contributors should also read [AGENTS.md](AGENTS.md).
+
 ## Roadmap
+
+See [`docs/roadmap.md`](docs/roadmap.md) for the full project profile: target state, current capabilities with evidence, hard non-goals, direction, and the acceptance matrix.
 
 - **Phase 2 — Runtime:** node status / dynamic metrics overlay (state producers address nodes via `Node.ref`), WebSocket/SSE refresh, snapshots, timeline replay. Runtime never stores layout.
 - **Phase 3 — Agents, collaboration, plugins.**
