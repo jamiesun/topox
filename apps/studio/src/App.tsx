@@ -302,6 +302,13 @@ export function App() {
     () => doc.graph.nodes.find((n) => selection.length === 1 && n.id === selection[0]),
     [doc.graph.nodes, selection],
   );
+  const selectedTrace = useMemo(
+    () =>
+      selectedNode === undefined
+        ? []
+        : timelineRef.current.nodeHistory([selectedNode.ref ?? selectedNode.id]),
+    [runtime, selectedNode],
+  );
   const selectedGroup = useMemo(
     () => doc.graph.groups.find((g) => groupSelection.length === 1 && g.id === groupSelection[0]),
     [doc.graph.groups, groupSelection],
@@ -586,8 +593,10 @@ export function App() {
               edge={selectedEdge}
               group={selectedGroup}
               nodeRuntime={selectedRuntime}
+              nodeTrace={selectedTrace}
               multiCount={selection.length + edgeSelection.length + groupSelection.length}
               onDiff={pushDiff}
+              onSeekTrace={handleSeek}
               onUngroup={ungroupSelected}
               onToggleGroup={toggleSelectedGroup}
             />

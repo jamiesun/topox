@@ -331,4 +331,74 @@ describe("runtime timeline", () => {
     expect(tl.range).toEqual({ start: 5000, end: 5000 });
     expect(tl.stateAt(5000).nodes["x"]?.metrics?.["cpu"]).toBe(1);
   });
+
+  it("keeps a bounded, merged runtime history for a node", () => {
+    const tl = new RuntimeTimeline({ checkpointInterval: 2, maxEvents: 4 });
+    tl.record({
+      kind: "node",
+      key: "a",
+      patch: { status: "running", metrics: { cpu: 10 } },
+      ts: 1000,
+    });
+    tl.record({
+      kind: "node",
+      key: "a",
+      patch: { status: "error", metrics: { latency: 20 } },
+      ts: 2000,
+    });
+    tl.record(nodeEv("b", 1, 3000));
+    tl.record(nodeEv("a", 40, 4000));
+
+    expect(tl.nodeHistory(["a"])).toEqual([
+      {
+        ts: 1000,
+        key: "a",
+        runtime: { status: "running", metrics: { cpu: 10 }, updatedAt: 1000 },
+      },
+      {
+        ts: 2000,
+        key: "a",
+        runtime: { status: "error", metrics: { cpu: 10, latency: 20 }, updatedAt: 2000 },
+      },
+      {
+        ts: 4000,
+        key: "a",
+        runtime: { status: "running", metrics: { cpu: 40, latency: 20 }, updatedAt: 4000 },
+      },
+    ]);
+
+    tl.record(nodeEv("a", 50, 5000));
+    expect(tl.nodeHistory(["a"])).toEqual([
+      {
+        ts: 4000,
+        key: "a",
+        runtime: { status: "running", metrics: { cpu: 40, latency: 20 }, updatedAt: 4000 },
+      },
+      {
+        ts: 5000,
+        key: "a",
+        runtime: { status: "running", metrics: { cpu: 50, latency: 20 }, updatedAt: 5000 },
+      },
+    ]);
+  });
+
+  it("records a snapshot when it clears a traced node", () => {
+    const tl = new RuntimeTimeline();
+    tl.record({
+      kind: "node",
+      key: "a",
+      patch: { status: "running", metrics: { cpu: 10 } },
+      ts: 1000,
+    });
+    tl.record({ kind: "snapshot", state: emptyRuntime(), ts: 2000 });
+
+    expect(tl.nodeHistory(["a"])).toEqual([
+      {
+        ts: 1000,
+        key: "a",
+        runtime: { status: "running", metrics: { cpu: 10 }, updatedAt: 1000 },
+      },
+      { ts: 2000, key: "a", runtime: null },
+    ]);
+  });
 });

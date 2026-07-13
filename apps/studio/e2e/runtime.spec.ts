@@ -54,3 +54,23 @@ test("Timeline seeks to historical runtime state and supports pause and resume",
   await page.getByRole("button", { name: "Live", exact: true }).click();
   await expect(page.getByText("LIVE", { exact: true })).toBeVisible();
 });
+
+test("selected node trace shows runtime history and jumps the Timeline", async ({ page }) => {
+  await page.goto("/");
+  await waitForCanvas(page);
+
+  const firewall = page.locator('.react-flow__node[data-id="fw"]');
+  await page.getByRole("button", { name: "Simulate" }).click();
+  await expect(firewall).toContainText(/cpu \d/, { timeout: 3_000 });
+  await firewall.click();
+
+  await expect(page.getByRole("heading", { name: "Runtime trace" })).toBeVisible();
+  await expect(page.getByText("Metric history", { exact: true })).toBeVisible();
+  const traceEntry = page.getByRole("button", { name: /Jump to runtime event/ }).first();
+  await expect(traceEntry).toContainText(/cpu/);
+
+  expect(await historyCount(page)).toBe(0);
+  await traceEntry.click();
+  await expect(page.getByText(/^REPLAY /)).toBeVisible();
+  expect(await historyCount(page)).toBe(0);
+});

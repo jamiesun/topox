@@ -13,7 +13,13 @@
  * - a max-events cap folds the oldest events into a base state so long
  *   sessions cannot grow memory without bound (the visible window slides).
  */
-import { applyRuntimeEvent, emptyRuntime, type RuntimeEvent, type RuntimeState } from "./runtime.js";
+import {
+  applyRuntimeEvent,
+  emptyRuntime,
+  type NodeRuntime,
+  type RuntimeEvent,
+  type RuntimeState,
+} from "./runtime.js";
 
 interface TimelineEntry {
   ts: number;
@@ -30,6 +36,14 @@ export interface TimelineOptions {
 export interface TimelineRange {
   start: number;
   end: number;
+}
+
+/** A retained runtime state update for one node key. */
+export interface NodeRuntimeHistoryEntry {
+  ts: number;
+  key: string;
+  /** null marks the point where the runtime producer removed the node state. */
+  runtime: NodeRuntime | null;
 }
 
 export class RuntimeTimeline {
@@ -93,6 +107,49 @@ export class RuntimeTimeline {
     }
     if (hit === -1) return this.base;
     return this.replay(hit);
+  }
+
+  /**
+   * Returns the retained event history for the requested runtime node keys.
+   * Each entry contains the merged state after that event, which makes metric
+   * samples and status transitions directly consumable by a trace UI.
+   */
+  nodeHistory(keys: Iterable<string>): NodeRuntimeHistoryEntry[] {
+    const wanted = new Set(keys);
+    if (wanted.size === 0) return [];
+
+    const history: NodeRuntimeHistoryEntry[] = [];
+    const nodes: Record<string, NodeRuntime> = {};
+    for (const key of wanted) {
+      const runtime = this.base.nodes[key];
+      if (runtime !== undefined) nodes[key] = runtime;
+    }
+    let state: RuntimeState = { nodes, edges: {} };
+    for (const entry of this.entries) {
+      if (entry.event.kind === "node") {
+        if (!wanted.has(entry.event.key)) continue;
+        state = applyRuntimeEvent(state, entry.event);
+        history.push({
+          ts: entry.ts,
+          key: entry.event.key,
+          runtime: state.nodes[entry.event.key] ?? null,
+        });
+      } else if (entry.event.kind === "snapshot") {
+        const before = state.nodes;
+        const snapshotNodes: Record<string, NodeRuntime> = {};
+        for (const key of wanted) {
+          const runtime = entry.event.state.nodes[key];
+          if (runtime !== undefined) snapshotNodes[key] = runtime;
+        }
+        state = { nodes: snapshotNodes, edges: {}, ts: entry.ts };
+        for (const key of wanted) {
+          if (before[key] !== undefined || snapshotNodes[key] !== undefined) {
+            history.push({ ts: entry.ts, key, runtime: state.nodes[key] ?? null });
+          }
+        }
+      }
+    }
+    return history;
   }
 
   clear(): void {

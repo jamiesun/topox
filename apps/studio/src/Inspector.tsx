@@ -6,6 +6,7 @@ import type {
   GraphDiff,
   Group,
   Node,
+  NodeRuntimeHistoryEntry,
   NodeRuntime,
   TopoDoc,
 } from "@topox/core";
@@ -234,14 +235,106 @@ function JsonEditor<T extends { id: string }>({
   );
 }
 
+function formatTraceTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString(undefined, { hour12: false });
+}
+
+function RuntimeTrace({
+  history,
+  onSeek,
+}: {
+  history: readonly NodeRuntimeHistoryEntry[];
+  onSeek: (ts: number) => void;
+}) {
+  if (history.length === 0) return null;
+
+  const recent = history
+    .map((entry, index) => ({
+      entry,
+      previousStatus: history[index - 1]?.runtime?.status,
+    }))
+    .slice(-12)
+    .reverse();
+  const metricHistory = new Map<string, { ts: number; value: string | number }[]>();
+  for (const entry of history) {
+    for (const [name, value] of Object.entries(entry.runtime?.metrics ?? {})) {
+      const samples = metricHistory.get(name) ?? [];
+      if (samples.at(-1)?.value !== value) samples.push({ ts: entry.ts, value });
+      metricHistory.set(name, samples);
+    }
+  }
+
+  return (
+    <section style={{ marginTop: 10, borderTop: "1px dashed #e2e8f0", paddingTop: 8 }}>
+      <h4 style={{ margin: "0 0 4px", fontSize: 12.5 }}>Runtime trace</h4>
+      <div style={{ color: "#64748b", fontSize: 11.5, marginBottom: 6 }}>
+        {history.length} retained event{history.length === 1 ? "" : "s"}
+      </div>
+      <ol style={{ margin: 0, paddingLeft: 18, fontSize: 11.5 }}>
+        {recent.map(({ entry, previousStatus }) => {
+          const currentStatus = entry.runtime?.status ?? "removed";
+          const status =
+            previousStatus !== undefined && previousStatus !== currentStatus
+              ? `${previousStatus} -> ${currentStatus}`
+              : currentStatus;
+          const metrics = Object.entries(entry.runtime?.metrics ?? {});
+          return (
+            <li key={`${entry.key}-${entry.ts}`} style={{ marginBottom: 4 }}>
+              <button
+                type="button"
+                style={{ ...smallBtn, width: "100%", textAlign: "left" }}
+                onClick={() => onSeek(entry.ts)}
+                aria-label={`Jump to runtime event at ${formatTraceTime(entry.ts)}`}
+              >
+                <span style={{ color: "#64748b", fontVariantNumeric: "tabular-nums" }}>
+                  {formatTraceTime(entry.ts)}
+                </span>{" "}
+                <strong>{status}</strong>
+                {metrics.length > 0 ? (
+                  <span style={{ color: "#475569" }}>
+                    {" "}
+                    {metrics.map(([name, value]) => `${name} ${value}`).join(" · ")}
+                  </span>
+                ) : null}
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+      <div style={{ color: "#64748b", fontSize: 11.5, marginTop: 8, marginBottom: 3 }}>Metric history</div>
+      {metricHistory.size === 0 ? (
+        <div style={{ color: "#8b95a1", fontSize: 11.5 }}>No metric samples received.</div>
+      ) : (
+        <table style={{ fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}>
+          <tbody>
+            {[...metricHistory.entries()].map(([name, samples]) => (
+              <tr key={name}>
+                <td style={{ color: "#64748b", paddingRight: 8, verticalAlign: "top" }}>{name}</td>
+                <td>
+                  {samples
+                    .slice(-6)
+                    .map((sample) => `${sample.value} @ ${formatTraceTime(sample.ts)}`)
+                    .join(" -> ")}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
 export interface InspectorProps {
   doc: TopoDoc;
   node?: Node | undefined;
   edge?: Edge | undefined;
   group?: Group | undefined;
   nodeRuntime?: NodeRuntime | undefined;
+  nodeTrace?: readonly NodeRuntimeHistoryEntry[] | undefined;
   multiCount: number;
   onDiff: (diff: GraphDiff) => void;
+  onSeekTrace: (ts: number) => void;
   onUngroup: () => void;
   onToggleGroup: () => void;
 }
@@ -252,8 +345,10 @@ export function Inspector({
   edge,
   group,
   nodeRuntime,
+  nodeTrace,
   multiCount,
   onDiff,
+  onSeekTrace,
   onUngroup,
   onToggleGroup,
 }: InspectorProps) {
@@ -341,6 +436,7 @@ export function Inspector({
             ) : null}
           </div>
         ) : null}
+        {nodeTrace !== undefined ? <RuntimeTrace history={nodeTrace} onSeek={onSeekTrace} /> : null}
       </div>
     );
   }
