@@ -20,6 +20,7 @@ import { autoLayoutDiff, statusPalette, TopoCanvas } from "@topox/editor";
 import { docFromYaml, docToYaml, parseMermaid, toMermaid } from "@topox/interop";
 import { AiPanel } from "./AiPanel.js";
 import { demoDoc } from "./demo.js";
+import { Inspector } from "./Inspector.js";
 import { simulateTick } from "./simulate.js";
 import { TimelineBar } from "./TimelineBar.js";
 
@@ -74,6 +75,7 @@ export function App() {
   const [dsl, setDsl] = useState("");
   const [query, setQuery] = useState("");
   const [selection, setSelection] = useState<string[]>([]);
+  const [edgeSelection, setEdgeSelection] = useState<string[]>([]);
   const [groupSelection, setGroupSelection] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<RuntimeState>(emptyRuntime());
@@ -143,13 +145,12 @@ export function App() {
     }
   }, []);
 
-  const handleSelect = useCallback((nodeIds: string[], _edgeIds: string[], groupIds: string[] = []) => {
-    setSelection((prev) =>
-      prev.length === nodeIds.length && prev.every((v, i) => v === nodeIds[i]) ? prev : nodeIds,
-    );
-    setGroupSelection((prev) =>
-      prev.length === groupIds.length && prev.every((v, i) => v === groupIds[i]) ? prev : groupIds,
-    );
+  const handleSelect = useCallback((nodeIds: string[], edgeIds: string[], groupIds: string[] = []) => {
+    const same = (prev: string[], next: string[]) =>
+      prev.length === next.length && prev.every((v, i) => v === next[i]);
+    setSelection((prev) => (same(prev, nodeIds) ? prev : nodeIds));
+    setEdgeSelection((prev) => (same(prev, edgeIds) ? prev : edgeIds));
+    setGroupSelection((prev) => (same(prev, groupIds) ? prev : groupIds));
   }, []);
 
   const issues = useMemo(() => validateDoc(doc), [doc]);
@@ -255,6 +256,10 @@ export function App() {
   const selectedGroup = useMemo(
     () => doc.graph.groups.find((g) => groupSelection.length === 1 && g.id === groupSelection[0]),
     [doc.graph.groups, groupSelection],
+  );
+  const selectedEdge = useMemo(
+    () => doc.graph.edges.find((e) => edgeSelection.length === 1 && e.id === edgeSelection[0]),
+    [doc.graph.edges, edgeSelection],
   );
 
   const groupSelected = useCallback(() => {
@@ -484,97 +489,17 @@ export function App() {
           <>
           <section>
             <h3 style={{ margin: "2px 0 8px", fontSize: 13 }}>Inspector</h3>
-            {selectedNode ? (
-              <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 10 }}>
-                <div style={{ fontWeight: 700 }}>{selectedNode.label}</div>
-                <div style={{ color: "#64748b", marginBottom: 6 }}>{selectedNode.type}</div>
-                {selectedNode.ref ? <div>ref: <code>{selectedNode.ref}</code></div> : null}
-                {selectedNode.description ? <div style={{ marginTop: 4 }}>{selectedNode.description}</div> : null}
-                {selectedNode.tags?.length ? <div style={{ marginTop: 4 }}>tags: {selectedNode.tags.join(", ")}</div> : null}
-                <label style={{ display: "block", marginTop: 8, color: "#64748b" }}>label</label>
-                <input
-                  value={selectedNode.label}
-                  onChange={(e) =>
-                    pushDiff({
-                      origin: "user",
-                      summary: `rename ${selectedNode.id}`,
-                      ops: [{ op: "update_node", id: selectedNode.id, before: { label: selectedNode.label }, after: { label: e.target.value } }],
-                    })
-                  }
-                  style={{ width: "100%", border: "1px solid #d0d7de", borderRadius: 6, padding: "4px 8px", boxSizing: "border-box" }}
-                />
-                {selectedRuntime ? (
-                  <div style={{ marginTop: 10, borderTop: "1px dashed #e2e8f0", paddingTop: 8 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          background: selectedRuntime.status !== undefined ? statusPalette[selectedRuntime.status] : "#94a3b8",
-                        }}
-                      />
-                      <strong>{selectedRuntime.status ?? "unknown"}</strong>
-                      {selectedRuntime.message ? (
-                        <span style={{ color: "#64748b" }}>{selectedRuntime.message}</span>
-                      ) : null}
-                    </div>
-                    {selectedRuntime.metrics ? (
-                      <table style={{ marginTop: 6, fontSize: 12, fontVariantNumeric: "tabular-nums" }}>
-                        <tbody>
-                          {Object.entries(selectedRuntime.metrics).map(([k, v]) => (
-                            <tr key={k}>
-                              <td style={{ color: "#64748b", paddingRight: 12 }}>{k}</td>
-                              <td>{v}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            ) : selectedGroup ? (
-              <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 10 }}>
-                <div style={{ fontWeight: 700 }}>{selectedGroup.label}</div>
-                <div style={{ color: "#64748b", marginBottom: 6 }}>
-                  group · {selectedGroup.children.length} member(s)
-                  {selectedGroup.collapsed === true ? " · collapsed" : ""}
-                </div>
-                <label style={{ display: "block", marginTop: 4, color: "#64748b" }}>label</label>
-                <input
-                  value={selectedGroup.label}
-                  onChange={(e) => {
-                    const op = makeGroupUpdate(selectedGroup, { ...selectedGroup, label: e.target.value });
-                    if (op)
-                      pushDiff({ origin: "user", summary: `rename group ${selectedGroup.id}`, ops: [op] });
-                  }}
-                  style={{ width: "100%", border: "1px solid #d0d7de", borderRadius: 6, padding: "4px 8px", boxSizing: "border-box" }}
-                />
-                <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-                  <button style={styles.btn} onClick={toggleSelectedGroup}>
-                    {selectedGroup.collapsed === true ? "Expand" : "Collapse"}
-                  </button>
-                  <button style={styles.btn} onClick={ungroupSelected}>Ungroup</button>
-                </div>
-                <div style={{ marginTop: 10, borderTop: "1px dashed #e2e8f0", paddingTop: 8 }}>
-                  <div style={{ color: "#64748b", marginBottom: 4 }}>members</div>
-                  <ul style={{ margin: 0, paddingLeft: 16 }}>
-                    {selectedGroup.children.map((c) => {
-                      const node = doc.graph.nodes.find((n) => n.id === c);
-                      const grp = node ? undefined : doc.graph.groups.find((g) => g.id === c);
-                      return (
-                        <li key={c} style={{ marginBottom: 2 }}>
-                          {node ? node.label : grp ? `${grp.label} (group)` : c}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              </div>
-            ) : (
-              <div style={{ color: "#8b95a1" }}>{selection.length > 1 ? `${selection.length} nodes selected` : "select a node"}</div>
-            )}
+            <Inspector
+              doc={doc}
+              node={selectedNode}
+              edge={selectedEdge}
+              group={selectedGroup}
+              nodeRuntime={selectedRuntime}
+              multiCount={selection.length + edgeSelection.length + groupSelection.length}
+              onDiff={pushDiff}
+              onUngroup={ungroupSelected}
+              onToggleGroup={toggleSelectedGroup}
+            />
           </section>
 
           <section style={{ marginTop: 16 }}>
