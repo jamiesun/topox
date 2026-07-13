@@ -38,6 +38,8 @@ RuntimeSnapshot — versioned RuntimeEvent window for offline replay (never part
 
 Runtime snapshot schema and host API: [`docs/runtime-snapshots.md`](docs/runtime-snapshots.md).
 
+Plugin API boundary draft (design only): [`docs/plugins.md`](docs/plugins.md).
+
 ## Development
 
 ```sh
