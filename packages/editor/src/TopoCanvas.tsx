@@ -26,7 +26,7 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import type { DiffOp, GraphDiff, NodeStatus, ResolvedRuntime, TopoDoc } from "@topox/core";
-import { makeMembershipCleanupOps, makeSetLayout } from "@topox/core";
+import { makeRemoveOps, makeSetLayout } from "@topox/core";
 import { Handle, Position } from "@xyflow/react";
 import {
   snapToAlignment,
@@ -634,34 +634,26 @@ export function TopoCanvas({
   const handleDelete = useCallback(
     (params: { nodes: RFNode[]; edges: RFEdge[] }) => {
       if (readOnly) return;
-      const groupIds = new Set(
-        params.nodes.map((n) => flowIdToGroupId(n.id)).filter((g): g is string => g !== null),
-      );
-      const nodeIds = new Set(params.nodes.map((n) => n.id).filter((id) => flowIdToGroupId(id) === null));
-      const removedEdges = doc.graph.edges.filter(
-        (e) => params.edges.some((re) => re.id === e.id) || nodeIds.has(e.source) || nodeIds.has(e.target),
-      );
-      const removedNodes = doc.graph.nodes.filter((n) => nodeIds.has(n.id));
       // Deleting a group dissolves the grouping; members stay.
-      const removedGroups = doc.graph.groups.filter((g) => groupIds.has(g.id));
-      if (removedEdges.length === 0 && removedNodes.length === 0 && removedGroups.length === 0) return;
-      // Surviving groups must not point at removed nodes/groups.
-      const removedIds = new Set<string>([...nodeIds, ...removedGroups.map((g) => g.id)]);
-      const cleanupOps = makeMembershipCleanupOps(doc.graph, removedIds);
+      const groupIds = params.nodes
+        .map((n) => flowIdToGroupId(n.id))
+        .filter((g): g is string => g !== null);
+      const nodeIds = params.nodes.map((n) => n.id).filter((id) => flowIdToGroupId(id) === null);
+      const edgeIds = params.edges.map((e) => e.id);
+      const ops = makeRemoveOps(doc, { nodeIds, edgeIds, groupIds });
+      if (ops.length === 0) return;
+      const removedNodes = ops.filter((op) => op.op === "remove_node").length;
+      const removedEdges = ops.filter((op) => op.op === "remove_edge").length;
+      const removedGroups = ops.filter((op) => op.op === "remove_group").length;
       onDiff({
         origin: "user",
-        summary: `delete ${removedNodes.length} node(s), ${removedEdges.length} edge(s)${
-          removedGroups.length > 0 ? `, ${removedGroups.length} group(s)` : ""
+        summary: `delete ${removedNodes} node(s), ${removedEdges} edge(s)${
+          removedGroups > 0 ? `, ${removedGroups} group(s)` : ""
         }`,
-        ops: [
-          ...removedEdges.map((edge) => ({ op: "remove_edge" as const, edge })),
-          ...removedNodes.map((node) => ({ op: "remove_node" as const, node })),
-          ...removedGroups.map((group) => ({ op: "remove_group" as const, group })),
-          ...cleanupOps,
-        ],
+        ops,
       });
     },
-    [doc.graph.edges, doc.graph.groups, doc.graph.nodes, onDiff, readOnly],
+    [doc, onDiff, readOnly],
   );
 
   const handleSelectionChange = useCallback(

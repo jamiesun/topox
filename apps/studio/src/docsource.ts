@@ -7,9 +7,12 @@ import { validateDoc, type TopoDoc } from "@topox/core";
  *           &save=/api/topo/docs/42           save endpoint (PUT; defaults to src)
  *           &ret=/network/42                  optional "Back" target after editing
  *
- * Relative URLs resolve against the studio origin, so same-domain deployments
- * (studio static files served by the host backend) need no CORS setup and
- * cookies flow automatically (credentials: include).
+ * All three URLs must be same-origin http(s) — relative URLs resolve against
+ * the studio origin. This keeps CORS-free cookie flow (credentials: include)
+ * and blocks query-string injection: a crafted link cannot exfiltrate a
+ * document to a foreign save endpoint or navigate to a javascript:/foreign ret.
+ * A foreign src disables shared mode; a foreign save falls back to src; a
+ * foreign ret is dropped.
  */
 export interface DocSource {
   src: string;
@@ -17,14 +20,35 @@ export interface DocSource {
   ret?: string;
 }
 
-export function parseDocSource(search: string): DocSource | null {
+/** Returns `raw` when it resolves to a same-origin http(s) URL, else null. */
+function sameOriginUrl(raw: string, base: string): string | null {
+  try {
+    const baseUrl = new URL(base);
+    const url = new URL(raw, baseUrl);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (url.origin !== baseUrl.origin) return null;
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
+export function parseDocSource(
+  search: string,
+  base: string = window.location.href,
+): DocSource | null {
   const params = new URLSearchParams(search);
-  const src = params.get("src");
-  if (!src) return null;
-  const ret = params.get("ret");
+  const rawSrc = params.get("src");
+  if (!rawSrc) return null;
+  const src = sameOriginUrl(rawSrc, base);
+  if (src === null) return null;
+  const rawSave = params.get("save");
+  const save = rawSave !== null ? (sameOriginUrl(rawSave, base) ?? src) : src;
+  const rawRet = params.get("ret");
+  const ret = rawRet !== null ? sameOriginUrl(rawRet, base) : null;
   return {
     src,
-    save: params.get("save") ?? src,
+    save,
     ...(ret !== null ? { ret } : {}),
   };
 }

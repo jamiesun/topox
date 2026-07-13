@@ -32,7 +32,7 @@ The matrix constrains *what must be verified*, not which framework or file layou
 ```sh
 npm install
 npm run build   # required: the studio dev server loads workspace packages from dist/
-npm test        # all workspaces, 48 tests
+npm test        # unit tests, all workspaces
 npm run dev     # studio at http://localhost:5173
 ```
 

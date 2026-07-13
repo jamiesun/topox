@@ -112,7 +112,7 @@ export function App() {
   const [timelineRevision, setTimelineRevision] = useState(0);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "failed">("idle");
   const docSource = useMemo(() => parseDocSource(window.location.search), []);
-  const savedDocRef = useRef<TopoDoc | null>(null);
+  const [savedDoc, setSavedDoc] = useState<TopoDoc | null>(null);
   const timelineRef = useRef(new RuntimeTimeline({ checkpointInterval: 25 }));
   const runtimeRef = useRef(runtime);
   runtimeRef.current = runtime;
@@ -150,7 +150,7 @@ export function App() {
       .then((loaded) => {
         if (cancelled) return;
         historyRef.current = new History(loaded);
-        savedDocRef.current = loaded;
+        setSavedDoc(loaded);
         setDoc(loaded);
         setError(null);
       })
@@ -162,7 +162,15 @@ export function App() {
     };
   }, [docSource]);
 
-  const dirty = docSource !== null && savedDocRef.current !== doc;
+  // Deep compare: undo back to the saved state must read as clean again.
+  const dirty = useMemo(
+    () =>
+      docSource !== null &&
+      savedDoc !== null &&
+      savedDoc !== doc &&
+      JSON.stringify(savedDoc) !== JSON.stringify(doc),
+    [doc, docSource, savedDoc],
+  );
 
   const saveRemote = useCallback(() => {
     if (!docSource) return;
@@ -170,7 +178,7 @@ export function App() {
     setSaveState("saving");
     saveDocTo(docSource.save, current)
       .then(() => {
-        savedDocRef.current = current;
+        setSavedDoc(current);
         setSaveState("saved");
         setError(null);
       })

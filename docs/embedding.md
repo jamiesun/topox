@@ -150,6 +150,14 @@ The studio understands three URL parameters:
   leave-page warning. Saving PUTs the whole document as JSON.
 - `ret` — a **← Back** button appears (confirms if there are unsaved changes).
 
+All three parameters are restricted to **same-origin http(s) URLs** (relative
+paths are fine — they resolve against the studio origin). Because requests
+carry cookies, a crafted link must not be able to exfiltrate a document to a
+foreign `save` endpoint or bounce the user to a `javascript:`/foreign `ret`.
+A foreign `src` disables shared mode entirely; a foreign `save` falls back to
+`src`; a foreign `ret` is ignored. Deploy the studio under the same domain as
+your API (the intended setup) and none of this affects you.
+
 Host-side integration is one link and two handlers:
 
 ```

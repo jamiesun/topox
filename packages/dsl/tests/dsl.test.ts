@@ -83,13 +83,40 @@ set edge e1 label=sql weight=3`,
     expect(next.graph.edges[0]).toMatchObject({ label: "sql", weight: 3 });
   });
 
-  it("remove node cascades its edges", () => {
-    const doc = base();
+  it("remove node cascades edges, group membership and layouts, undoably", () => {
+    const doc = applyDiff(base(), {
+      ops: [
+        { op: "add_group", group: { id: "site", label: "Site", children: ["r1", "db"] } },
+        { op: "set_layout", viewId: "default", nodeId: "db", before: null, after: { x: 3, y: 4 } },
+      ],
+    });
     const { diff, errors } = compileDsl("remove node db", doc);
     expect(errors).toEqual([]);
     const next = applyDiff(doc, diff);
     expect(next.graph.nodes.map((n) => n.id)).toEqual(["r1"]);
     expect(next.graph.edges).toHaveLength(0);
+    expect(next.graph.groups[0]!.children).toEqual(["r1"]);
+    expect(next.views[0]!.layout["db"]).toBeUndefined();
+    expect(isValid(validateDoc(next))).toBe(true);
+    const undone = applyDiff(next, invertDiff(diff));
+    expect(undone.graph.groups[0]!.children).toEqual(["r1", "db"]);
+    expect(undone.views[0]!.layout["db"]).toEqual({ x: 3, y: 4 });
+  });
+
+  it("remove group dissolves it and detaches it from its parent", () => {
+    const doc = applyDiff(base(), {
+      ops: [
+        { op: "add_group", group: { id: "inner", label: "Inner", children: ["db"] } },
+        { op: "add_group", group: { id: "outer", label: "Outer", children: ["inner", "r1"] } },
+      ],
+    });
+    const { diff, errors } = compileDsl("remove group inner", doc);
+    expect(errors).toEqual([]);
+    const next = applyDiff(doc, diff);
+    expect(next.graph.groups.map((g) => g.id)).toEqual(["outer"]);
+    expect(next.graph.groups[0]!.children).toEqual(["r1"]);
+    expect(next.graph.nodes).toHaveLength(2);
+    expect(isValid(validateDoc(next))).toBe(true);
   });
 
   it("bad lines are reported and skipped, good lines still compile", () => {

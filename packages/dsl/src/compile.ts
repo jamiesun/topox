@@ -7,7 +7,7 @@ import type {
   Node,
   TopoDoc,
 } from "@topox/core";
-import { applyDiff, makeEdgeUpdate, makeGroupUpdate, makeNodeUpdate } from "@topox/core";
+import { applyDiff, makeEdgeUpdate, makeGroupUpdate, makeNodeUpdate, makeRemoveOps } from "@topox/core";
 import { tokenize, type DslError, type Token } from "./tokenize.js";
 
 export interface CompileResult {
@@ -319,11 +319,8 @@ export function compileDsl(source: string, doc: TopoDoc): CompileResult {
         if (kind === "node") {
           const node = working.graph.nodes.find((n) => n.id === id);
           if (!node) return fail(`remove node: unknown id ${id}`);
-          const connected = working.graph.edges.filter((e) => e.source === id || e.target === id);
-          push(lineNo, line, [
-            ...connected.map((edge) => ({ op: "remove_edge" as const, edge })),
-            { op: "remove_node", node },
-          ]);
+          // Full cleanup: edges, group memberships and view layouts go too.
+          push(lineNo, line, makeRemoveOps(working, { nodeIds: [id] }));
         } else if (kind === "edge") {
           const edge = working.graph.edges.find((e) => e.id === id);
           if (!edge) return fail(`remove edge: unknown id ${id}`);
@@ -331,7 +328,8 @@ export function compileDsl(source: string, doc: TopoDoc): CompileResult {
         } else if (kind === "group") {
           const group = working.graph.groups.find((g) => g.id === id);
           if (!group) return fail(`remove group: unknown id ${id}`);
-          push(lineNo, line, [{ op: "remove_group", group }]);
+          // Dissolves the group (children stay) and detaches it from any parent.
+          push(lineNo, line, makeRemoveOps(working, { groupIds: [id] }));
         } else {
           fail(`remove: unknown kind ${kind}`);
         }

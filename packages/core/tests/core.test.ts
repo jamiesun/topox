@@ -7,6 +7,7 @@ import {
   invertDiff,
   makeNodeUpdate,
   makeDuplicateNodes,
+  makeRemoveOps,
   makeSetLayout,
   toInventory,
   inventoryToCsv,
@@ -72,17 +73,69 @@ describe("applyDiff", () => {
     ).toThrow(DiffConflictError);
   });
 
-  it("removing a node cleans groups and layouts", () => {
+  it("refuses to remove a node still referenced by a group or a view layout", () => {
     const doc = fixtureDoc();
-    const next = applyDiff(doc, {
-      ops: [
-        { op: "remove_edge", edge: doc.graph.edges.find((e) => e.id === "e1")! },
-        { op: "remove_edge", edge: doc.graph.edges.find((e) => e.id === "e2")! },
-        { op: "remove_node", node: doc.graph.nodes.find((n) => n.id === "a")! },
-      ],
+    const nodeA = doc.graph.nodes.find((n) => n.id === "a")!;
+    const dropEdges = doc.graph.edges
+      .filter((e) => e.source === "a" || e.target === "a")
+      .map((edge) => ({ op: "remove_edge", edge }) as const);
+    // Still a member of grp1.
+    expect(() =>
+      applyDiff(doc, { ops: [...dropEdges, { op: "remove_node", node: nodeA }] }),
+    ).toThrow(/group member/);
+    // Membership cleaned but layout still present.
+    expect(() =>
+      applyDiff(doc, {
+        ops: [
+          ...dropEdges,
+          { op: "update_group", id: "grp1", before: { children: ["a", "b"] }, after: { children: ["b"] } },
+          { op: "remove_node", node: nodeA },
+        ],
+      }),
+    ).toThrow(/view layout/);
+  });
+
+  it("rejects update_edge that would dangle an endpoint", () => {
+    const doc = fixtureDoc();
+    expect(() =>
+      applyDiff(doc, {
+        ops: [{ op: "update_edge", id: "e1", before: { target: "a" }, after: { target: "ghost" } }],
+      }),
+    ).toThrow(DiffConflictError);
+  });
+
+  it("rejects groups referencing unknown children", () => {
+    const doc = fixtureDoc();
+    expect(() =>
+      applyDiff(doc, {
+        ops: [{ op: "add_group", group: { id: "gX", label: "X", children: ["ghost"] } }],
+      }),
+    ).toThrow(DiffConflictError);
+    expect(() =>
+      applyDiff(doc, {
+        ops: [{ op: "update_group", id: "grp1", before: { children: ["a", "b"] }, after: { children: ["a", "ghost"] } }],
+      }),
+    ).toThrow(DiffConflictError);
+  });
+
+  it("rejects ids shared between nodes and groups", () => {
+    const doc = fixtureDoc();
+    expect(() =>
+      applyDiff(doc, { ops: [{ op: "add_node", node: { id: "grp1", type: "t", label: "clash" } }] }),
+    ).toThrow(DiffConflictError);
+    expect(() =>
+      applyDiff(doc, { ops: [{ op: "add_group", group: { id: "a", label: "clash", children: [] } }] }),
+    ).toThrow(DiffConflictError);
+  });
+
+  it("refuses to remove a group still referenced by a parent group", () => {
+    const doc = applyDiff(fixtureDoc(), {
+      ops: [{ op: "add_group", group: { id: "outer", label: "Outer", children: ["grp1"] } }],
     });
-    expect(next.graph.groups[0]!.children).toEqual(["b"]);
-    expect(next.views[0]!.layout["a"]).toBeUndefined();
+    const grp1 = doc.graph.groups.find((g) => g.id === "grp1")!;
+    expect(() =>
+      applyDiff(doc, { ops: [{ op: "remove_group", group: grp1 }] }),
+    ).toThrow(/parent group/);
   });
 
   it("update_node patches fields and null deletes them", () => {
@@ -112,6 +165,82 @@ describe("invertDiff", () => {
     const changed = applyDiff(doc, diff);
     const restored = applyDiff(changed, invertDiff(diff));
     expect(JSON.stringify(restored)).toBe(JSON.stringify(doc));
+  });
+});
+
+describe("makeRemoveOps", () => {
+  /** Order-insensitive doc equality: undo re-appends entities at the end. */
+  function normalize(doc: TopoDoc): TopoDoc {
+    const byId = <T extends { id: string }>(a: T, b: T) => a.id.localeCompare(b.id);
+    return {
+      ...doc,
+      graph: {
+        ...doc.graph,
+        nodes: [...doc.graph.nodes].sort(byId),
+        edges: [...doc.graph.edges].sort(byId),
+        groups: [...doc.graph.groups].sort(byId),
+      },
+    };
+  }
+
+  it("removes a node with its edges, memberships and layouts, and undo restores everything", () => {
+    const doc = fixtureDoc();
+    const diff: GraphDiff = { summary: "delete a", ops: makeRemoveOps(doc, { nodeIds: ["a"] }) };
+    const next = applyDiff(doc, diff);
+    expect(next.graph.nodes.map((n) => n.id)).toEqual(["b", "c"]);
+    expect(next.graph.edges).toHaveLength(0);
+    expect(next.graph.groups[0]!.children).toEqual(["b"]);
+    expect(next.views[0]!.layout["a"]).toBeUndefined();
+    expect(isValid(validateDoc(next))).toBe(true);
+
+    const restored = applyDiff(next, invertDiff(diff));
+    expect(JSON.stringify(normalize(restored))).toBe(JSON.stringify(normalize(doc)));
+    expect(restored.views[0]!.layout["a"]).toEqual({ x: 10, y: 20 });
+  });
+
+  it("dissolves a group while keeping its members", () => {
+    const doc = fixtureDoc();
+    const diff: GraphDiff = { ops: makeRemoveOps(doc, { groupIds: ["grp1"] }) };
+    const next = applyDiff(doc, diff);
+    expect(next.graph.groups).toHaveLength(0);
+    expect(next.graph.nodes).toHaveLength(3);
+    expect(isValid(validateDoc(next))).toBe(true);
+    const restored = applyDiff(next, invertDiff(diff));
+    expect(JSON.stringify(normalize(restored))).toBe(JSON.stringify(normalize(doc)));
+  });
+
+  it("handles nested groups plus their contents in one selection", () => {
+    const doc = applyDiff(fixtureDoc(), {
+      ops: [{ op: "add_group", group: { id: "outer", label: "Outer", children: ["grp1", "c"] } }],
+    });
+    const diff: GraphDiff = {
+      ops: makeRemoveOps(doc, { nodeIds: ["a", "b"], groupIds: ["grp1", "outer"] }),
+    };
+    const next = applyDiff(doc, diff);
+    expect(next.graph.nodes.map((n) => n.id)).toEqual(["c"]);
+    expect(next.graph.groups).toHaveLength(0);
+    expect(next.graph.edges).toHaveLength(0);
+    expect(isValid(validateDoc(next))).toBe(true);
+    const restored = applyDiff(next, invertDiff(diff));
+    expect(JSON.stringify(normalize(restored))).toBe(JSON.stringify(normalize(doc)));
+  });
+
+  it("removes a child group referenced by a surviving parent", () => {
+    const doc = applyDiff(fixtureDoc(), {
+      ops: [{ op: "add_group", group: { id: "outer", label: "Outer", children: ["grp1", "c"] } }],
+    });
+    const diff: GraphDiff = { ops: makeRemoveOps(doc, { groupIds: ["grp1"] }) };
+    const next = applyDiff(doc, diff);
+    expect(next.graph.groups.map((g) => g.id)).toEqual(["outer"]);
+    expect(next.graph.groups[0]!.children).toEqual(["c"]);
+    expect(isValid(validateDoc(next))).toBe(true);
+    const restored = applyDiff(next, invertDiff(diff));
+    expect(JSON.stringify(normalize(restored))).toBe(JSON.stringify(normalize(doc)));
+  });
+
+  it("ignores unknown ids", () => {
+    const doc = fixtureDoc();
+    expect(makeRemoveOps(doc, { nodeIds: ["ghost"], edgeIds: ["ex"], groupIds: ["gx"] })).toEqual([]);
   });
 });
 

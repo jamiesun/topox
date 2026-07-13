@@ -63,8 +63,10 @@ node <id> ["label"] [type=<t>] [ref=<r>] [tags=a,b] [desc="..."] [key=value ...]
 edge <src> -> <dst> ["label"] [id=<e>] [color=<c>] [weight=<n>] [key=value ...]
   Directed edge. Use -- for undirected. Endpoints must exist (earlier lines count).
 group <id> ["label"] children=a,b,c
+  Every child must already exist (earlier lines count).
 set node|edge|group <id> key=value ...   # update; value null deletes the key
-remove node|edge|group <id>              # removing a node also removes its edges
+remove node|edge|group <id>              # node removal takes its edges/layout along;
+                                         # group removal dissolves it, members stay
 
 Rules:
 - ids are short slugs (kebab-case). Never reuse an existing id for a new element.

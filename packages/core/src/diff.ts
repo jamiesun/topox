@@ -82,33 +82,29 @@ function applyOp(doc: TopoDoc, op: DiffOp): TopoDoc {
     case "add_node": {
       if (doc.graph.nodes.some((n) => n.id === op.node.id))
         upsertFail(op, `add_node: id ${op.node.id} already exists`);
+      if (doc.graph.groups.some((g) => g.id === op.node.id))
+        upsertFail(op, `add_node: id ${op.node.id} collides with a group id`);
       return {
         ...doc,
         graph: { ...doc.graph, nodes: [...doc.graph.nodes, clone(op.node)] },
       };
     }
     case "remove_node": {
+      // Strict removal: the diff must clean up every reference first
+      // (edges, group membership, view layouts), otherwise the op is not
+      // invertible — add_node alone could not restore the lost references.
+      // Use makeRemoveOps() to build a correctly ordered removal diff.
       if (!doc.graph.nodes.some((n) => n.id === op.node.id))
         upsertFail(op, `remove_node: id ${op.node.id} not found`);
       if (doc.graph.edges.some((e) => e.source === op.node.id || e.target === op.node.id))
         upsertFail(op, `remove_node: node ${op.node.id} still has edges`);
+      if (doc.graph.groups.some((g) => g.children.includes(op.node.id)))
+        upsertFail(op, `remove_node: node ${op.node.id} is still a group member`);
+      if (doc.views.some((v) => op.node.id in v.layout))
+        upsertFail(op, `remove_node: node ${op.node.id} still has view layout`);
       return {
         ...doc,
-        graph: {
-          ...doc.graph,
-          nodes: doc.graph.nodes.filter((n) => n.id !== op.node.id),
-          groups: doc.graph.groups.map((g) =>
-            g.children.includes(op.node.id)
-              ? { ...g, children: g.children.filter((c) => c !== op.node.id) }
-              : g,
-          ),
-        },
-        views: doc.views.map((v) => {
-          if (!(op.node.id in v.layout)) return v;
-          const layout = { ...v.layout };
-          delete layout[op.node.id];
-          return { ...v, layout };
-        }),
+        graph: { ...doc.graph, nodes: doc.graph.nodes.filter((n) => n.id !== op.node.id) },
       };
     }
     case "update_node": {
@@ -145,25 +141,43 @@ function applyOp(doc: TopoDoc, op: DiffOp): TopoDoc {
     case "update_edge": {
       const edge = doc.graph.edges.find((e) => e.id === op.id);
       if (!edge) upsertFail(op, `update_edge: id ${op.id} not found`);
+      const nextEdge = applyPatch(edge, op.after);
+      if (!doc.graph.nodes.some((n) => n.id === nextEdge.source))
+        upsertFail(op, `update_edge: unknown source ${String(nextEdge.source)}`);
+      if (!doc.graph.nodes.some((n) => n.id === nextEdge.target))
+        upsertFail(op, `update_edge: unknown target ${String(nextEdge.target)}`);
       return {
         ...doc,
         graph: {
           ...doc.graph,
-          edges: doc.graph.edges.map((e) => (e.id === op.id ? applyPatch(e, op.after) : e)),
+          edges: doc.graph.edges.map((e) => (e.id === op.id ? nextEdge : e)),
         },
       };
     }
     case "add_group": {
       if (doc.graph.groups.some((g) => g.id === op.group.id))
         upsertFail(op, `add_group: id ${op.group.id} already exists`);
+      if (doc.graph.nodes.some((n) => n.id === op.group.id))
+        upsertFail(op, `add_group: id ${op.group.id} collides with a node id`);
+      for (const child of op.group.children) {
+        if (
+          !doc.graph.nodes.some((n) => n.id === child) &&
+          !doc.graph.groups.some((g) => g.id === child)
+        )
+          upsertFail(op, `add_group: unknown child ${child}`);
+      }
       return {
         ...doc,
         graph: { ...doc.graph, groups: [...doc.graph.groups, clone(op.group)] },
       };
     }
     case "remove_group": {
+      // Strict removal: parent groups must stop referencing this group first,
+      // or the doc would be left with a dangling child id. See makeRemoveOps().
       if (!doc.graph.groups.some((g) => g.id === op.group.id))
         upsertFail(op, `remove_group: id ${op.group.id} not found`);
+      if (doc.graph.groups.some((g) => g.id !== op.group.id && g.children.includes(op.group.id)))
+        upsertFail(op, `remove_group: group ${op.group.id} is still referenced by a parent group`);
       return {
         ...doc,
         graph: { ...doc.graph, groups: doc.graph.groups.filter((g) => g.id !== op.group.id) },
@@ -172,11 +186,23 @@ function applyOp(doc: TopoDoc, op: DiffOp): TopoDoc {
     case "update_group": {
       const group = doc.graph.groups.find((g) => g.id === op.id);
       if (!group) upsertFail(op, `update_group: id ${op.id} not found`);
+      const nextGroup = applyPatch(group, op.after);
+      if (!Array.isArray(nextGroup.children))
+        upsertFail(op, `update_group: children of ${op.id} must be a list`);
+      for (const child of nextGroup.children) {
+        if (child === op.id)
+          upsertFail(op, `update_group: group ${op.id} cannot contain itself`);
+        if (
+          !doc.graph.nodes.some((n) => n.id === child) &&
+          !doc.graph.groups.some((g) => g.id === child)
+        )
+          upsertFail(op, `update_group: unknown child ${child}`);
+      }
       return {
         ...doc,
         graph: {
           ...doc.graph,
-          groups: doc.graph.groups.map((g) => (g.id === op.id ? applyPatch(g, op.after) : g)),
+          groups: doc.graph.groups.map((g) => (g.id === op.id ? nextGroup : g)),
         },
       };
     }

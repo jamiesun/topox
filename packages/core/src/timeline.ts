@@ -124,7 +124,8 @@ export class RuntimeTimeline {
   loadSnapshot(snapshot: RuntimeSnapshot): void {
     const detached = validateRuntimeSnapshot(snapshot);
     this.clear();
-    for (const event of detached.events) this.append(event, false);
+    // Trim on load too: maxEvents bounds memory regardless of event source.
+    for (const event of detached.events) this.append(event, true);
   }
 
   private append(event: TimestampedRuntimeEvent, trim: boolean): void {
