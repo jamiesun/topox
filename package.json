@@ -1,0 +1,20 @@
+{
+  "name": "topox",
+  "private": true,
+  "version": "0.1.0",
+  "description": "An engine for describing, editing, running and monitoring topology systems.",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "dev": "npm run dev --workspace @topox/studio"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "esbuild@0.25.12": true
+  }
+}
