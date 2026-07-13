@@ -11,7 +11,11 @@ export interface TimelineBarProps {
   /** null = live (following the newest state). */
   replayTs: number | null;
   playing: boolean;
+  canStepBack: boolean;
+  canStepForward: boolean;
   onSeek: (ts: number) => void;
+  onStepBack: () => void;
+  onStepForward: () => void;
   onTogglePlay: () => void;
   onLive: () => void;
 }
@@ -29,7 +33,18 @@ const btn: CSSProperties = {
   lineHeight: "16px",
 };
 
-export function TimelineBar({ range, replayTs, playing, onSeek, onTogglePlay, onLive }: TimelineBarProps) {
+export function TimelineBar({
+  range,
+  replayTs,
+  playing,
+  canStepBack,
+  canStepForward,
+  onSeek,
+  onStepBack,
+  onStepForward,
+  onTogglePlay,
+  onLive,
+}: TimelineBarProps) {
   const live = replayTs === null;
   const value = replayTs ?? range.end;
   return (
@@ -53,6 +68,12 @@ export function TimelineBar({ range, replayTs, playing, onSeek, onTogglePlay, on
     >
       <button style={btn} onClick={onTogglePlay} title={playing ? "Pause" : "Replay from here"}>
         {playing ? "⏸" : "▶"}
+      </button>
+      <button style={btn} onClick={onStepBack} disabled={!canStepBack} title="Previous event">
+        ◀|
+      </button>
+      <button style={btn} onClick={onStepForward} disabled={!canStepForward} title="Next event">
+        |▶
       </button>
       <button
         style={{

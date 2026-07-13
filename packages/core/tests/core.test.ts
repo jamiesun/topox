@@ -15,8 +15,10 @@ import {
   isValid,
   emptyRuntime,
   applyRuntimeEvent,
+  parseRuntimeSnapshot,
   resolveRuntime,
   RuntimeTimeline,
+  serializeRuntimeSnapshot,
 } from "../src/index.js";
 import type { GraphDiff, Node, TopoDoc } from "../src/index.js";
 
@@ -400,5 +402,72 @@ describe("runtime timeline", () => {
       },
       { ts: 2000, key: "a", runtime: null },
     ]);
+  });
+});
+
+describe("runtime snapshots", () => {
+  const nodeEvent = (cpu: number, ts: number) => ({
+    kind: "node" as const,
+    key: "node-a",
+    patch: { status: "running" as const, metrics: { cpu } },
+    ts,
+  });
+
+  it("round-trips a trimmed timeline without losing its retained base state", () => {
+    const timeline = new RuntimeTimeline({ checkpointInterval: 2, maxEvents: 4 });
+    for (let i = 1; i <= 6; i++) timeline.record(nodeEvent(i * 10, i * 1000));
+    const expected = timeline.stateAt(Number.POSITIVE_INFINITY);
+
+    const snapshot = timeline.toSnapshot(7000);
+    expect(snapshot).toMatchObject({
+      format: "topox-runtime-snapshot",
+      version: 1,
+      capturedAt: 7000,
+      range: { start: 3000, end: 6000 },
+    });
+    expect(snapshot.events[0]).toMatchObject({ kind: "snapshot", ts: 3000 });
+
+    const parsed = parseRuntimeSnapshot(serializeRuntimeSnapshot(snapshot));
+    const restored = new RuntimeTimeline();
+    restored.loadSnapshot(parsed);
+
+    expect(restored.range).toEqual(snapshot.range);
+    expect(restored.eventTimestamps).toEqual([3000, 4000, 5000, 6000]);
+    expect(restored.stateAt(snapshot.range!.end)).toEqual(expected);
+  });
+
+  it("rejects unsupported versions and malformed event payloads", () => {
+    const timeline = new RuntimeTimeline();
+    timeline.record(nodeEvent(10, 1000));
+    const snapshot = timeline.toSnapshot(2000);
+
+    expect(() =>
+      parseRuntimeSnapshot(JSON.stringify({ ...snapshot, version: 2 })),
+    ).toThrow(/unsupported runtime snapshot version: 2/);
+    expect(() =>
+      parseRuntimeSnapshot(
+        JSON.stringify({
+          ...snapshot,
+          events: [{ kind: "node", key: "node-a", patch: { metrics: { cpu: true } }, ts: 1000 }],
+        }),
+      ),
+    ).toThrow(/events\[0\].*metrics\.cpu/);
+    expect(() =>
+      parseRuntimeSnapshot(JSON.stringify({ ...snapshot, range: { start: 999, end: 1000 } })),
+    ).toThrow(/range does not match event timestamps/);
+  });
+
+  it("validates a replacement before clearing the current timeline", () => {
+    const timeline = new RuntimeTimeline();
+    timeline.record(nodeEvent(10, 1000));
+    const before = timeline.stateAt(1000);
+    const invalid = {
+      ...timeline.toSnapshot(2000),
+      version: 2,
+    } as unknown as Parameters<RuntimeTimeline["loadSnapshot"]>[0];
+
+    expect(() => timeline.loadSnapshot(invalid)).toThrow(/unsupported runtime snapshot version: 2/);
+    expect(timeline.range).toEqual({ start: 1000, end: 1000 });
+    expect(timeline.stateAt(1000)).toEqual(before);
   });
 });

@@ -20,10 +20,16 @@ import {
   type RuntimeEvent,
   type RuntimeState,
 } from "./runtime.js";
+import {
+  createRuntimeSnapshot,
+  type RuntimeSnapshot,
+  type TimestampedRuntimeEvent,
+  validateRuntimeSnapshot,
+} from "./runtime-snapshot.js";
 
 interface TimelineEntry {
   ts: number;
-  event: RuntimeEvent;
+  event: TimestampedRuntimeEvent;
 }
 
 export interface TimelineOptions {
@@ -44,6 +50,17 @@ export interface NodeRuntimeHistoryEntry {
   key: string;
   /** null marks the point where the runtime producer removed the node state. */
   runtime: NodeRuntime | null;
+}
+
+function pinEvent(event: RuntimeEvent, ts: number): TimestampedRuntimeEvent {
+  switch (event.kind) {
+    case "node":
+      return { kind: "node", key: event.key, patch: event.patch, ts };
+    case "edge":
+      return { kind: "edge", key: event.key, patch: event.patch, ts };
+    case "snapshot":
+      return { kind: "snapshot", state: event.state, ts };
+  }
 }
 
 export class RuntimeTimeline {
@@ -72,6 +89,15 @@ export class RuntimeTimeline {
     return { start: first.ts, end: last.ts };
   }
 
+  /** Unique retained event timestamps, suitable for frame-by-frame controls. */
+  get eventTimestamps(): number[] {
+    const timestamps: number[] = [];
+    for (const entry of this.entries) {
+      if (timestamps[timestamps.length - 1] !== entry.ts) timestamps.push(entry.ts);
+    }
+    return timestamps;
+  }
+
   /**
    * Append an event. Its timestamp is pinned now (event.ts wins when present)
    * so later replays see exactly what live consumers saw.
@@ -81,13 +107,33 @@ export class RuntimeTimeline {
     const last = this.entries[this.entries.length - 1];
     // guard monotonicity so binary search stays valid
     const finalTs = last && pinned < last.ts ? last.ts : pinned;
-    this.entries.push({ ts: finalTs, event: { ...event, ts: finalTs } });
+    this.append(pinEvent(event, finalTs), true);
+  }
 
+  /** A versioned, detached copy of the retained runtime window. */
+  toSnapshot(capturedAt = Date.now()): RuntimeSnapshot {
+    const events = this.entries.map((entry) => entry.event);
+    const first = this.entries[0];
+    if (first !== undefined && this.base.ts !== undefined) {
+      events.unshift({ kind: "snapshot", state: this.base, ts: first.ts });
+    }
+    return createRuntimeSnapshot(events, capturedAt);
+  }
+
+  /** Replaces this timeline with a previously parsed snapshot. */
+  loadSnapshot(snapshot: RuntimeSnapshot): void {
+    const detached = validateRuntimeSnapshot(snapshot);
+    this.clear();
+    for (const event of detached.events) this.append(event, false);
+  }
+
+  private append(event: TimestampedRuntimeEvent, trim: boolean): void {
+    this.entries.push({ ts: event.ts, event });
     if (this.entries.length % this.checkpointInterval === 0) {
       const index = this.entries.length - 1;
       this.checkpoints.push({ index, state: this.replay(index) });
     }
-    if (this.entries.length > this.maxEvents) this.trim();
+    if (trim && this.entries.length > this.maxEvents) this.trim();
   }
 
   /** State as of `ts` (inclusive). Before the window: base state. */

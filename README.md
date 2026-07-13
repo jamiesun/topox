@@ -16,7 +16,7 @@ Not a drawing app. Not a whiteboard. Not a flowchart tool.
 
 | Package | Purpose |
 | --- | --- |
-| `@topox/core` | Kernel: `Graph`/`Node`/`Edge`/`Group`/`View` model, validation, diff engine (`applyDiff`/`invertDiff`), `History`, inventory projection. Zero runtime dependencies. |
+| `@topox/core` | Kernel: graph model, validation, invertible diffs, `History`, runtime Timeline, Trace, and versioned runtime snapshots. Zero runtime dependencies. |
 | `@topox/dsl` | Line-oriented topology DSL compiled to `GraphDiff` (the AI output format), plus `docToDsl` serialization and an LLM prompt guide. |
 | `@topox/editor` | React Flow canvas. A controlled view: doc in, diffs out. Includes dagre auto-layout emitted as a diff. |
 | `@topox/interop` | YAML (full fidelity) and Mermaid flowchart (export + tolerant import) interchange. |
@@ -33,7 +33,10 @@ Group  — nestable containers
 View   — layout (x/y/w/h per node) + viewport; owned by the editor
 TopoDoc — { graph, views }: the editable unit
 GraphDiff — ordered, invertible ops; the only way anything changes
+RuntimeSnapshot — versioned RuntimeEvent window for offline replay (never part of TopoDoc)
 ```
+
+Runtime snapshot schema and host API: [`docs/runtime-snapshots.md`](docs/runtime-snapshots.md).
 
 ## Development
 

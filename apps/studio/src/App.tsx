@@ -9,9 +9,11 @@ import {
   makeGroupOps,
   makeGroupUpdate,
   makeUngroupOps,
+  parseRuntimeSnapshot,
   resolveRuntime,
   RuntimeTimeline,
   searchNodes,
+  serializeRuntimeSnapshot,
   toInventory,
   validateDoc,
 } from "@topox/core";
@@ -84,13 +86,16 @@ export function App() {
   const [simulating, setSimulating] = useState(false);
   const [replayTs, setReplayTs] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [timelineRevision, setTimelineRevision] = useState(0);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "failed">("idle");
   const docSource = useMemo(() => parseDocSource(window.location.search), []);
   const savedDocRef = useRef<TopoDoc | null>(null);
   const timelineRef = useRef(new RuntimeTimeline({ checkpointInterval: 25 }));
   const runtimeRef = useRef(runtime);
   runtimeRef.current = runtime;
+  const simulationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const snapshotInputRef = useRef<HTMLInputElement>(null);
 
   const history = historyRef.current;
   const viewId = doc.views[0]?.id ?? "default";
@@ -215,19 +220,24 @@ export function App() {
       for (const e of events) timelineRef.current.record(e);
       setRuntime((prev) => events.reduce(applyRuntimeEvent, prev));
     }, 1200);
-    return () => clearInterval(timer);
+    simulationTimerRef.current = timer;
+    return () => {
+      clearInterval(timer);
+      if (simulationTimerRef.current === timer) simulationTimerRef.current = null;
+    };
   }, [simulating]);
 
   const toggleSimulate = useCallback(() => {
-    setSimulating((on) => {
-      if (on) {
-        setRuntime(emptyRuntime());
-        timelineRef.current.clear();
-        setReplayTs(null);
-        setPlaying(false);
-      }
-      return !on;
-    });
+    if (simulationTimerRef.current !== null) {
+      clearInterval(simulationTimerRef.current);
+      simulationTimerRef.current = null;
+    }
+    setRuntime(emptyRuntime());
+    timelineRef.current.clear();
+    setTimelineRevision((revision) => revision + 1);
+    setReplayTs(null);
+    setPlaying(false);
+    setSimulating((on) => !on);
   }, []);
 
   // DVR playback: advance the replay cursor at 1x, chasing the live edge.
@@ -243,9 +253,28 @@ export function App() {
   }, [playing]);
 
   const timelineRange = timelineRef.current.range;
+  const timelineFrames = timelineRef.current.eventTimestamps;
   const handleSeek = useCallback((ts: number) => {
     setPlaying(false);
     setReplayTs(ts);
+  }, []);
+  const handleStep = useCallback((direction: -1 | 1) => {
+    setPlaying(false);
+    setReplayTs((current) => {
+      const frames = timelineRef.current.eventTimestamps;
+      if (frames.length === 0) return current;
+      const cursor = current ?? frames[frames.length - 1]!;
+      if (direction < 0) {
+        for (let index = frames.length - 1; index >= 0; index--) {
+          if (frames[index]! < cursor) return frames[index]!;
+        }
+        return frames[0]!;
+      }
+      for (const frame of frames) {
+        if (frame > cursor) return frame;
+      }
+      return frames[frames.length - 1]!;
+    });
   }, []);
   const handleTogglePlay = useCallback(() => {
     if (replayTs === null) {
@@ -264,7 +293,7 @@ export function App() {
 
   const replayState = useMemo(
     () => (replayTs !== null ? timelineRef.current.stateAt(replayTs) : null),
-    [replayTs],
+    [replayTs, timelineRevision],
   );
   const activeRuntime = replayState ?? runtime;
   const resolvedRuntime = useMemo(
@@ -307,7 +336,7 @@ export function App() {
       selectedNode === undefined
         ? []
         : timelineRef.current.nodeHistory([selectedNode.ref ?? selectedNode.id]),
-    [runtime, selectedNode],
+    [runtime, selectedNode, timelineRevision],
   );
   const selectedGroup = useMemo(
     () => doc.graph.groups.find((g) => groupSelection.length === 1 && g.id === groupSelection[0]),
@@ -380,6 +409,41 @@ export function App() {
     () => download(`${doc.graph.id}.inventory.csv`, inventoryToCsv(inventory), "text/csv"),
     [doc.graph.id, download, inventory],
   );
+  const exportRuntimeSnapshot = useCallback(() => {
+    try {
+      download(
+        `${doc.graph.id}.topox-runtime.json`,
+        serializeRuntimeSnapshot(timelineRef.current.toSnapshot()),
+        "application/json",
+      );
+      setError(null);
+    } catch (e) {
+      setError(`snapshot export failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [doc.graph.id, download]);
+  const importRuntimeSnapshot = useCallback((raw: string) => {
+    try {
+      const snapshot = parseRuntimeSnapshot(raw);
+      const timeline = new RuntimeTimeline({ checkpointInterval: 25 });
+      timeline.loadSnapshot(snapshot);
+      const range = timeline.range;
+      const finalRuntime = range === null ? emptyRuntime() : timeline.stateAt(range.end);
+
+      if (simulationTimerRef.current !== null) {
+        clearInterval(simulationTimerRef.current);
+        simulationTimerRef.current = null;
+      }
+      setSimulating(false);
+      setPlaying(false);
+      timelineRef.current = timeline;
+      setTimelineRevision((revision) => revision + 1);
+      setRuntime(finalRuntime);
+      setReplayTs(range?.start ?? null);
+      setError(null);
+    } catch (e) {
+      setError(`snapshot import failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, []);
 
   return (
     <div style={styles.root}>
@@ -400,6 +464,17 @@ export function App() {
             { label: "Export YAML", hint: ".topox.yaml", onSelect: exportYaml },
             { label: "Export Mermaid", hint: ".mmd", onSelect: exportMermaid },
             { label: "Export CSV inventory", hint: ".csv", onSelect: exportCsv },
+            {
+              label: "Load runtime snapshot…",
+              hint: ".topox-runtime.json",
+              onSelect: () => snapshotInputRef.current?.click(),
+            },
+            {
+              label: "Save runtime snapshot",
+              hint: ".topox-runtime.json",
+              disabled: timelineRange === null,
+              onSelect: exportRuntimeSnapshot,
+            },
           ]}
         />
         <Dropdown
@@ -472,6 +547,24 @@ export function App() {
           }}
         />
         <input
+          ref={snapshotInputRef}
+          type="file"
+          accept=".json,application/json"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            void file.text().then(importRuntimeSnapshot, (readError: unknown) => {
+              setError(
+                `snapshot import failed: ${
+                  readError instanceof Error ? readError.message : String(readError)
+                }`,
+              );
+            });
+            e.target.value = "";
+          }}
+        />
+        <input
           placeholder="search nodes…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -534,7 +627,15 @@ export function App() {
                 range={timelineRange}
                 replayTs={replayTs}
                 playing={playing}
+                canStepBack={
+                  timelineFrames.some((frame) => frame < (replayTs ?? timelineRange.end))
+                }
+                canStepForward={
+                  replayTs !== null && timelineFrames.some((frame) => frame > replayTs)
+                }
                 onSeek={handleSeek}
+                onStepBack={() => handleStep(-1)}
+                onStepForward={() => handleStep(1)}
                 onTogglePlay={handleTogglePlay}
                 onLive={handleLive}
               />

@@ -76,6 +76,10 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 
   选中节点可查看保留窗口中的状态变迁与指标样本，点击任一事件会将 Timeline 跳转到对应时刻。Trace 只从有界 `RuntimeTimeline` 事件流派生，不写入文档、diff 或编辑历史。证据：`packages/core/src/timeline.ts`（`nodeHistory`）；`apps/studio/src/Inspector.tsx`；`apps/studio/e2e/runtime.spec.ts`。
 
+- **运行态快照**
+
+  累积的 RuntimeEvent 窗口可保存为版本化 JSON 并在刷新后重新加载回放；加载前完整校验格式、版本、事件与时间范围，坏文件不改变当前运行态。快照与 TopoDoc 严格分离。证据：`packages/core/src/runtime-snapshot.ts`；`docs/runtime-snapshots.md`；`apps/studio/e2e/snapshot.spec.ts`。
+
 - **React Flow 编辑器（受控视图）**
 
   doc 进、diff 出；拖拽走本地状态松手一次提交；dagre 自动布局以 diff 形式产出；组可视化（展开=派生包围盒容器、折叠=代理节点、跨边界边重定向合并、嵌套父盖子）。证据：`packages/editor/src/{TopoCanvas,convert,layout}.tsx|ts`，`packages/editor/tests/editor.test.ts`（group projection 等）。
@@ -181,6 +185,7 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 | 运行态叠加（状态/指标/活跃边） | 中 | ✅ Simulate 状态/指标叠加贯穿 UI | ✅ 未知 ref 事件安全忽略 | 不适用 | ✅ UI 级关闭模拟后叠加清除、文档与 History 不变 | `apps/studio/e2e/runtime.spec.ts`；`packages/core/tests/core.test.ts` runtime overlay；`packages/editor/tests/editor.test.ts` runtime overlay projection |
 | Timeline 回放 | 低 | ✅ UI 级历史状态定位 + 暂停/恢复/Live | ✅ 时间戳单调性 clamp | 不适用 | 不适用（只读回放，不改文档） | `apps/studio/e2e/runtime.spec.ts`；`packages/core/tests/core.test.ts` runtime timeline |
 | 节点 Trace（事件/指标历史） | 低 | ✅ UI 级选中节点→查看状态/指标历史→跳转 Timeline | 不适用（只读运行态） | 不适用 | 不适用（只读，不改文档） | `apps/studio/e2e/runtime.spec.ts`；`packages/core/tests/core.test.ts` runtime timeline history |
+| 运行态快照（保存/加载） | 中 | ✅ Simulate→保存→刷新→加载→回放/逐帧 | ✅ 未知版本拒绝且当前回放、文档、History 不变 | 不适用 | ✅ 加载先校验后原子替换 | `apps/studio/e2e/snapshot.spec.ts`；`packages/core/tests/core.test.ts` runtime snapshots |
 | Inspector 属性编辑（基础/attrs/JSON） | 中 | ✅ label 编辑贯穿 UI（attrs/JSON 编辑待补） | 待核验（JSON 编辑的 id 不变/端点校验在 `apps/studio/src/Inspector.tsx`，无测试） | 不适用 | ✅ 编辑走 update diff，UI 级 undo 已验证 | `apps/studio/e2e/edit.spec.ts`；内核层 `core.test.ts` makeNodeUpdate |
 | 搜索（名称/标签/类型/属性） | 低 | ✅ UI 级命中计数 + Inventory 过滤 | 不适用（只读过滤） | 不适用 | 不适用（只读） | `apps/studio/e2e/capabilities.spec.ts`；`packages/core/tests/core.test.ts` searchNodes 断言 |
 | 自动布局（dagre） | 中 | ✅ UI 级坐标变化 | 待核验 | 不适用 | ✅ UI 级 undo 恢复原坐标 | `apps/studio/e2e/capabilities.spec.ts`；`packages/editor/tests/editor.test.ts` autoLayoutDiff（含幂等性） |
@@ -190,7 +195,7 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 
 覆盖现状：
 
-- 三条改状态主链路（图编辑、AI 管线 Apply、导入）、共享 Studio 保存闭环，以及运行态叠加/Timeline/节点 Trace、分组、布局、搜索、导出、embed 挂载均已有贯穿公开边界的 Playwright E2E（`apps/studio/e2e/`，CI 强制运行）。
+- 三条改状态主链路（图编辑、AI 管线 Apply、导入）、共享 Studio 保存闭环，以及运行态叠加/Timeline/Trace/快照、分组、布局、搜索、导出、embed 挂载均已有贯穿公开边界的 Playwright E2E（`apps/studio/e2e/`，CI 强制运行）。
 - 各"待核验"项在补测试或人工确认后更新本矩阵。
 
 ## 维护规则
