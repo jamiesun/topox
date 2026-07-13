@@ -42,6 +42,7 @@ npm install
 npm run build   # build all workspaces
 npm test        # run all tests
 npm run dev     # start studio at http://localhost:5173
+npm run e2e -w apps/studio   # browser E2E (needs `npx playwright install chromium` once)
 ```
 
 Quality floor: every top-level feature needs a happy-path E2E, and state-mutating features need failure/rollback coverage — see the [acceptance matrix](docs/roadmap.md#验收矩阵业务能力覆盖矩阵) in the roadmap. Agent contributors should also read [AGENTS.md](AGENTS.md).

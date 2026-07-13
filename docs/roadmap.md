@@ -151,7 +151,7 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 - **锚定场景可以退役专有画图工具。** 真实的网络交付拓扑完全用 TopoX 描述、编辑并产出交付清单，且没有为迁移在内核里加过任何业务特判。
 - **一次真实故障可以被回放。** 接入真实数据源后，运维可以把时间轴拖回故障时刻，看到当时的节点状态与边流量。
 - **AI 提案零信任落地。** 任何 AI 生成的修改在落地前都能被预览为 diff、被拒绝、落地后能被一键撤销；不存在例外通道。
-- **核心数据流有自动化测试守护。** 内核 diff/回放/校验的回归能在 CI 中被挡下（当前由各包 vitest 承担；引入 CI 与浏览器级 E2E 的方式由执行者选择）。
+- **核心数据流有自动化测试守护。** 内核 diff/回放/校验的回归能在 CI 中被挡下（已落地：`.github/workflows/ci.yml` 在 push/PR 上运行全部 vitest 单测与 studio Playwright E2E）。
 - **文档-代码一致。** README 与本画像描述的能力均可在代码中找到对应实现；冲突时以代码和可运行测试为准，并回改文档。
 
 ## 验收矩阵（业务能力覆盖矩阵）
@@ -168,15 +168,15 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 
 | 一级功能 | 风险级别 | Happy Path E2E | 失败路径 | 权限角色覆盖 | 失败恢复/回滚 | 证据（测试路径/用例） |
 | --- | --- | --- | --- | --- | --- | --- |
-| 图编辑（节点/边增删改、移动、连线） | 中 | ❌ 缺口（无 UI 级 E2E） | ✅ diff 冲突拒绝 | 不适用 | ✅ invertDiff/undo | `packages/core/tests/core.test.ts` applyDiff/invertDiff/History；`packages/editor/tests/editor.test.ts` toFlow |
-| 撤销/重做 | 中 | ❌ 缺口（无 UI 级 E2E） | ✅ 空栈边界 | 不适用 | ✅ 本身即回滚机制 | `packages/core/tests/core.test.ts` History |
+| 图编辑（节点/边增删改、移动、连线） | 中 | ✅ Inspector 改 label→画布更新 | ✅ diff 冲突拒绝 | 不适用 | ✅ UI 级 undo 还原已验证 | `apps/studio/e2e/edit.spec.ts`；内核层 `packages/core/tests/core.test.ts` applyDiff/invertDiff/History |
+| 撤销/重做 | 中 | ✅ 编辑后 ↩ 还原（UI 级） | ✅ 空栈边界 | 不适用 | ✅ 本身即回滚机制 | `apps/studio/e2e/edit.spec.ts`；`packages/core/tests/core.test.ts` History |
 | 分组（创建/解组/折叠/展开/嵌套） | 中 | ❌ 缺口（无 UI 级 E2E） | ✅ 组循环/多父校验 | 不适用 | ✅ 组操作走可逆 diff | `packages/editor/tests/editor.test.ts` group projection；`packages/core/tests/core.test.ts` validate |
-| AI/DSL 管线（Prompt→DSL→Diff→Preview→Apply） | 高（外部 API 副作用 + 批量改文档） | ❌ 缺口（编译有测试，预览确认流程无 E2E） | ✅ DSL 容错逐行报错 | 不适用 | ✅ Apply 后可 undo | `packages/dsl/tests/dsl.test.ts` compileDsl/tokenize |
-| 导入（JSON/YAML/Mermaid，整文档替换） | 高（可整体覆盖用户文档） | ❌ 缺口（解析有测试，studio 导入分发无测试） | 待核验（导入前 validateDoc 拒绝逻辑在 `apps/studio/src/App.tsx` importFile，无测试） | 不适用 | ❌ 缺口（导入替换 History，无恢复验证） | `packages/interop/tests/interop.test.ts` yaml/mermaid import |
+| AI/DSL 管线（Prompt→DSL→Diff→Preview→Apply） | 高（外部 API 副作用 + 批量改文档） | ✅ DSL→Preview→Apply→undo 贯穿 studio | ✅ 坏行报行级错误且文档不变（UI 级）+ 编译容错单测 | 不适用 | ✅ Apply 后 UI 级 undo 已验证 | `apps/studio/e2e/dsl.spec.ts`；`packages/dsl/tests/dsl.test.ts` compileDsl/tokenize |
+| 导入（JSON/YAML/Mermaid，整文档替换） | 高（可整体覆盖用户文档） | ✅ File▾ 导入 JSON 整文档替换 | ✅ 坏 JSON 与校验失败文档均被拒（UI 级） | 不适用 | ✅ 拒绝后原文档完好（UI 级） | `apps/studio/e2e/import.spec.ts`；`packages/interop/tests/interop.test.ts` yaml/mermaid import |
 | 导出（JSON/YAML/Mermaid/CSV） | 低（只读投影） | ❌ 缺口（序列化有测试，下载链路无 E2E） | 不适用（只读，无状态变更） | 不适用 | 不适用（只读） | `packages/interop/tests/interop.test.ts` yaml/mermaid export；core.test.ts inventory projection |
 | 运行态叠加（状态/指标/活跃边） | 中 | ❌ 缺口（无 UI 级 E2E） | ✅ 未知 ref 事件安全忽略 | 不适用 | ✅ 叠加层可整体清除，文档不受影响 | `packages/core/tests/core.test.ts` runtime overlay；`packages/editor/tests/editor.test.ts` runtime overlay projection |
 | Timeline 回放 | 低 | ❌ 缺口（无 UI 级 E2E） | ✅ 时间戳单调性 clamp | 不适用 | 不适用（只读回放，不改文档） | `packages/core/tests/core.test.ts` runtime timeline |
-| Inspector 属性编辑（基础/attrs/JSON） | 中 | ❌ 缺口（studio 组件无测试） | 待核验（JSON 编辑的 id 不变/端点校验在 `apps/studio/src/Inspector.tsx`，无测试） | 不适用 | ✅ 编辑走 update diff，可 undo | 内核层 `core.test.ts` makeNodeUpdate；UI 层无 |
+| Inspector 属性编辑（基础/attrs/JSON） | 中 | ✅ label 编辑贯穿 UI（attrs/JSON 编辑待补） | 待核验（JSON 编辑的 id 不变/端点校验在 `apps/studio/src/Inspector.tsx`，无测试） | 不适用 | ✅ 编辑走 update diff，UI 级 undo 已验证 | `apps/studio/e2e/edit.spec.ts`；内核层 `core.test.ts` makeNodeUpdate |
 | 搜索（名称/标签/类型/属性） | 低 | ❌ 缺口（无 UI 级） | 不适用（只读过滤） | 不适用 | 不适用（只读） | `packages/core/tests/core.test.ts` searchNodes 断言 |
 | 自动布局（dagre） | 中 | ❌ 缺口（无 UI 级 E2E） | 待核验 | 不适用 | ✅ 布局以 diff 产出，可 undo | `packages/editor/tests/editor.test.ts` autoLayoutDiff（含幂等性） |
 | SSE 运行态接入（connectRuntimeSSE） | 中 | ✅ 单测覆盖 snapshot→patch 折叠（浏览器级 E2E 缺口） | ✅ 畸形消息 onError 后继续流 | 不适用 | ✅ 叠加层可整体清除；close 幂等 | `packages/core/tests/sse.test.ts` |
@@ -185,8 +185,7 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 
 缺口的最低期望：
 
-- **UI 级 E2E 全面缺失**是当前最大质量缺口。最低期望：为"图编辑、AI 管线 Apply、导入"三条改状态主链路各建一条贯穿 studio 的 E2E（工具自选，如 Playwright），其余功能可后续补齐。
-- **导入无失败恢复验证**：最低期望是验证"导入非法文档被拒绝后，原文档与历史完好"。
+- 三条改状态主链路（图编辑、AI 管线 Apply、导入）已有贯穿 studio 的 Playwright E2E（`apps/studio/e2e/`，CI 强制运行）。剩余 ❌ 行按同一模式补齐即可，优先级：共享 Studio 保存闭环 > 运行态叠加/Timeline > 分组/布局/搜索/导出。
 - 各"待核验"项在补测试或人工确认后更新本矩阵。
 
 ## 维护规则
