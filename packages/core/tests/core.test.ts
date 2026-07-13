@@ -6,6 +6,7 @@ import {
   History,
   invertDiff,
   makeNodeUpdate,
+  makeDuplicateNodes,
   makeSetLayout,
   toInventory,
   inventoryToCsv,
@@ -125,6 +126,7 @@ describe("makeNodeUpdate / makeSetLayout", () => {
       before: { label: "A", tags: ["x"] },
       after: { label: "A2", tags: null },
     });
+
     expect(makeNodeUpdate(before, { ...before })).toBeNull();
   });
 
@@ -132,6 +134,61 @@ describe("makeNodeUpdate / makeSetLayout", () => {
     const doc = fixtureDoc();
     const op = makeSetLayout(doc.views[0]!, "a", { x: 99, y: 99 });
     expect(op).toMatchObject({ before: { x: 10, y: 20 }, after: { x: 99, y: 99 } });
+  });
+});
+
+describe("makeDuplicateNodes", () => {
+  it("deep-copies nodes with unique ids, offset layouts, and group membership in one diff", () => {
+    const doc = applyDiff(fixtureDoc(), {
+      ops: [
+        {
+          op: "update_node",
+          id: "b",
+          before: { tags: ["prod"] },
+          after: { tags: ["prod", "api"], attrs: { nested: { retries: 3 } } },
+        },
+      ],
+    });
+    const result = makeDuplicateNodes(doc, "default", ["a", "b", "a"], {
+      offset: { x: 24, y: 24 },
+      positions: { b: { x: 50, y: 60, width: 180, height: 70 } },
+    });
+
+    expect(result.nodeIds).toEqual(["a-copy", "b-copy"]);
+    expect(result.diff).toMatchObject({
+      origin: "user",
+      summary: "duplicate 2 nodes",
+    });
+    const added = result.diff.ops
+      .filter((op) => op.op === "add_node")
+      .map((op) => op.node);
+    expect(added).toEqual([
+      { ...doc.graph.nodes.find((node) => node.id === "a")!, id: "a-copy" },
+      { ...doc.graph.nodes.find((node) => node.id === "b")!, id: "b-copy" },
+    ]);
+    expect(added[1]!.attrs).not.toBe(doc.graph.nodes.find((node) => node.id === "b")!.attrs);
+    expect(result.diff.ops).toContainEqual({
+      op: "set_layout",
+      viewId: "default",
+      nodeId: "a-copy",
+      before: null,
+      after: { x: 34, y: 44 },
+    });
+    expect(result.diff.ops).toContainEqual({
+      op: "set_layout",
+      viewId: "default",
+      nodeId: "b-copy",
+      before: null,
+      after: { x: 74, y: 84, width: 180, height: 70 },
+    });
+
+    const history = new History(doc);
+    const changed = history.apply(result.diff);
+    expect(changed.graph.groups[0]?.children).toEqual(["a", "a-copy", "b", "b-copy"]);
+    expect(history.undo()).toEqual(doc);
+
+    const next = makeDuplicateNodes(changed, "default", ["a"]);
+    expect(next.nodeIds).toEqual(["a-copy-2"]);
   });
 });
 

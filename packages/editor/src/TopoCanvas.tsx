@@ -16,6 +16,7 @@ import {
   Controls,
   MiniMap,
   ReactFlow,
+  ViewportPortal,
   type Connection,
   type Edge as RFEdge,
   type EdgeChange,
@@ -27,6 +28,11 @@ import {
 import type { DiffOp, GraphDiff, NodeStatus, ResolvedRuntime, TopoDoc } from "@topox/core";
 import { makeMembershipCleanupOps, makeSetLayout } from "@topox/core";
 import { Handle, Position } from "@xyflow/react";
+import {
+  snapToAlignment,
+  type AlignmentBox,
+  type AlignmentGuides,
+} from "./alignment.js";
 import {
   flowIdToGroupId,
   formatMetrics,
@@ -99,6 +105,7 @@ const TopoNode = memo(function TopoNode({ data, selected }: NodeProps<TopoRFNode
       data-search-match={d.searchMatch === true ? "true" : undefined}
       data-search-current={d.searchCurrent === true ? "true" : undefined}
       data-search-dimmed={d.searchDimmed === true ? "true" : undefined}
+      data-locked={d.locked === true ? "true" : undefined}
       style={{
         border: `1.5px solid ${borderColor}`,
         borderLeft: `4px solid ${accent}`,
@@ -129,6 +136,22 @@ const TopoNode = memo(function TopoNode({ data, selected }: NodeProps<TopoRFNode
             boxShadow: `0 0 0 3px ${statusColor}33`,
           }}
         />
+      ) : null}
+      {d.locked === true ? (
+        <span
+          title="Locked"
+          style={{
+            position: "absolute",
+            right: 6,
+            bottom: 5,
+            color: "#64748b",
+            fontSize: 8,
+            fontWeight: 800,
+            letterSpacing: 0.5,
+          }}
+        >
+          LOCKED
+        </span>
       ) : null}
       <div style={{ fontSize: 10, color: accent, fontWeight: 600, letterSpacing: 0.4 }}>
         {d.nodeType}
@@ -301,6 +324,30 @@ const TopoGroupNode = memo(function TopoGroupNode({ data, selected }: NodeProps<
 
 const nodeTypes = { topo: TopoNode, topoGroup: TopoGroupNode };
 
+function alignmentBox(node: RFNode): AlignmentBox {
+  return {
+    id: node.id,
+    x: node.position.x,
+    y: node.position.y,
+    width: node.measured?.width ?? node.width ?? 150,
+    height: node.measured?.height ?? node.height ?? 60,
+  };
+}
+
+function eventClientPoint(event: unknown): { x: number; y: number } | null {
+  if (
+    event === null ||
+    typeof event !== "object" ||
+    !("clientX" in event) ||
+    !("clientY" in event) ||
+    typeof event.clientX !== "number" ||
+    typeof event.clientY !== "number"
+  ) {
+    return null;
+  }
+  return { x: event.clientX, y: event.clientY };
+}
+
 let edgeSeq = 0;
 function nextEdgeId(existing: Set<string>): string {
   let id = `e-${Date.now().toString(36)}-${(edgeSeq += 1)}`;
@@ -327,10 +374,17 @@ export function TopoCanvas({
   // state (drag positions, selection) locally so dragging stays at 60fps; the
   // document is only touched once, as a diff, when the gesture ends.
   const [flow, setFlow] = useState(() => toFlow(doc, viewId, runtime, search));
+  const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuides>({});
   const mounted = useRef(false);
   const flowInstance = useRef<ReactFlowInstance<TopoRFNode, RFEdge> | null>(null);
+  const lockedNodeIds = useMemo(
+    () => new Set(doc.graph.nodes.filter((node) => node.locked === true).map((node) => node.id)),
+    [doc.graph.nodes],
+  );
   // Positions at drag start, for proxy drags (delta moves all hidden members).
   const dragStart = useRef<Map<string, { x: number; y: number }>>(new Map());
+  const dragPointerStart = useRef<{ x: number; y: number } | null>(null);
+  const snappedPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   useEffect(() => {
     if (!mounted.current) {
@@ -391,13 +445,21 @@ export function TopoCanvas({
     [focusSearchResult],
   );
 
-  const handleNodesChange = useCallback((changes: NodeChange<TopoRFNode>[]) => {
-    // Removals go through the diff pipeline (onDelete), never the local state,
-    // so the document stays the single source of truth.
-    const safe = changes.filter((c) => c.type !== "remove");
-    if (safe.length === 0) return;
-    setFlow((prev) => ({ ...prev, nodes: applyNodeChanges(safe, prev.nodes) }));
-  }, []);
+  const handleNodesChange = useCallback(
+    (changes: NodeChange<TopoRFNode>[]) => {
+      // Removals go through the diff pipeline (onDelete), never the local state.
+      // Position changes for locked nodes are also rejected defensively so a
+      // multi-selection drag cannot move them as passengers.
+      const safe = changes.filter(
+        (change) =>
+          change.type !== "remove" &&
+          !(change.type === "position" && lockedNodeIds.has(change.id)),
+      );
+      if (safe.length === 0) return;
+      setFlow((prev) => ({ ...prev, nodes: applyNodeChanges(safe, prev.nodes) }));
+    },
+    [lockedNodeIds],
+  );
 
   const handleEdgesChange = useCallback((changes: EdgeChange<RFEdge>[]) => {
     const safe = changes.filter((c) => c.type !== "remove");
@@ -405,41 +467,131 @@ export function TopoCanvas({
     setFlow((prev) => ({ ...prev, edges: applyEdgeChanges(safe, prev.edges) }));
   }, []);
 
-  const handleNodeDragStart = useCallback((_event: unknown, _node: RFNode, dragged: RFNode[]) => {
-    dragStart.current = new Map(dragged.map((n) => [n.id, { ...n.position }]));
-  }, []);
+  const handleNodeDragStart = useCallback(
+    (event: unknown, node: RFNode, dragged: RFNode[]) => {
+      setAlignmentGuides({});
+      snappedPositions.current.clear();
+      const movingNodes = dragged.length > 0 ? dragged : [node];
+      dragStart.current = new Map(
+        movingNodes.map((candidate) => [candidate.id, { ...candidate.position }]),
+      );
+      const point = eventClientPoint(event);
+      dragPointerStart.current =
+        point !== null && flowInstance.current !== null
+          ? flowInstance.current.screenToFlowPosition(point)
+          : null;
+    },
+    [],
+  );
+
+  const handleNodeDrag = useCallback(
+    (event: unknown, node: RFNode, dragged: RFNode[]) => {
+      if (readOnly || lockedNodeIds.has(node.id) || flowIdToGroupId(node.id) !== null) {
+        setAlignmentGuides({});
+        return;
+      }
+      const movingNodes = dragged.length > 0 ? dragged : [node];
+      const movingIds = new Set(movingNodes.map((candidate) => candidate.id));
+      const rawPositions = new Map(
+        movingNodes.map((candidate) => [candidate.id, { ...candidate.position }]),
+      );
+      const point = eventClientPoint(event);
+      if (
+        point !== null &&
+        dragPointerStart.current !== null &&
+        flowInstance.current !== null
+      ) {
+        const currentPointer = flowInstance.current.screenToFlowPosition(point);
+        const pointerDelta = {
+          x: currentPointer.x - dragPointerStart.current.x,
+          y: currentPointer.y - dragPointerStart.current.y,
+        };
+        for (const movingNode of movingNodes) {
+          const start = dragStart.current.get(movingNode.id);
+          if (start === undefined) continue;
+          rawPositions.set(movingNode.id, {
+            x: start.x + pointerDelta.x,
+            y: start.y + pointerDelta.y,
+          });
+        }
+      }
+      const primaryPosition = rawPositions.get(node.id) ?? node.position;
+      const targets = flow.nodes
+        .filter(
+          (candidate) =>
+            !movingIds.has(candidate.id) && flowIdToGroupId(candidate.id) === null,
+        )
+        .map(alignmentBox);
+      const snapped = snapToAlignment(
+        alignmentBox({ ...node, position: primaryPosition }),
+        targets,
+      );
+      const dx = snapped.position.x - primaryPosition.x;
+      const dy = snapped.position.y - primaryPosition.y;
+      const nextPositions = new Map<string, { x: number; y: number }>();
+      for (const movingNode of movingNodes) {
+        if (lockedNodeIds.has(movingNode.id)) continue;
+        const rawPosition = rawPositions.get(movingNode.id) ?? movingNode.position;
+        nextPositions.set(movingNode.id, {
+          x: rawPosition.x + dx,
+          y: rawPosition.y + dy,
+        });
+      }
+      snappedPositions.current = nextPositions;
+      setAlignmentGuides(snapped.guides);
+      if (dx === 0 && dy === 0) return;
+      setFlow((previous) => ({
+        ...previous,
+        nodes: previous.nodes.map((candidate) => {
+          const position = nextPositions.get(candidate.id);
+          return position === undefined ? candidate : { ...candidate, position };
+        }),
+      }));
+    },
+    [flow.nodes, lockedNodeIds, readOnly],
+  );
 
   const handleNodeDragStop = useCallback(
     (_event: unknown, _node: RFNode, dragged: RFNode[]) => {
-      if (readOnly || !view) return;
+      setAlignmentGuides({});
+      if (readOnly || !view) {
+        dragPointerStart.current = null;
+        snappedPositions.current.clear();
+        return;
+      }
       const ops: DiffOp[] = [];
       for (const node of dragged) {
+        const position = snappedPositions.current.get(node.id) ?? node.position;
         const groupId = flowIdToGroupId(node.id);
         if (groupId !== null) {
           // Proxy drag: translate every hidden member by the drag delta so the
           // group's internal geometry survives collapse/expand round-trips.
           const start = dragStart.current.get(node.id);
           if (!start) continue;
-          const dx = Math.round(node.position.x - start.x);
-          const dy = Math.round(node.position.y - start.y);
+          const dx = Math.round(position.x - start.x);
+          const dy = Math.round(position.y - start.y);
           if (dx === 0 && dy === 0) continue;
           for (const member of transitiveNodeMembers(doc.graph, groupId)) {
+            if (lockedNodeIds.has(member)) continue;
             const before = view.layout[member];
             if (!before) continue; // fallback-grid nodes keep deriving positions
             ops.push(makeSetLayout(view, member, { ...before, x: before.x + dx, y: before.y + dy }));
           }
           continue;
         }
+        if (lockedNodeIds.has(node.id)) continue;
         const before = view.layout[node.id];
         const next = {
-          x: Math.round(node.position.x),
-          y: Math.round(node.position.y),
+          x: Math.round(position.x),
+          y: Math.round(position.y),
           ...(before?.width !== undefined ? { width: before.width } : {}),
           ...(before?.height !== undefined ? { height: before.height } : {}),
         };
         if (before && before.x === next.x && before.y === next.y) continue;
         ops.push(makeSetLayout(view, node.id, next));
       }
+      dragPointerStart.current = null;
+      snappedPositions.current.clear();
       if (ops.length === 0) return;
       onDiff({
         origin: "user",
@@ -450,7 +602,7 @@ export function TopoCanvas({
         ops,
       });
     },
-    [doc.graph, onDiff, readOnly, view],
+    [doc.graph, lockedNodeIds, onDiff, readOnly, view],
   );
 
   const handleConnect = useCallback(
@@ -565,6 +717,7 @@ export function TopoCanvas({
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onNodeDragStart={handleNodeDragStart}
+        onNodeDrag={handleNodeDrag}
         onNodeDragStop={handleNodeDragStop}
         onConnect={handleConnect}
         onDelete={handleDelete}
@@ -573,6 +726,7 @@ export function TopoCanvas({
         nodesDraggable={!readOnly}
         nodesConnectable={!readOnly}
         elementsSelectable
+        multiSelectionKeyCode={["Meta", "Control", "Shift"]}
         fitView
         proOptions={{ hideAttribution: true }}
         deleteKeyCode={readOnly ? null : ["Backspace", "Delete"]}
@@ -592,6 +746,40 @@ export function TopoCanvas({
             </marker>
           </defs>
         </svg>
+        <ViewportPortal>
+          {alignmentGuides.vertical !== undefined ? (
+            <div
+              data-alignment-guide="vertical"
+              style={{
+                position: "absolute",
+                left: alignmentGuides.vertical.position,
+                top: alignmentGuides.vertical.from,
+                width: 1,
+                height: alignmentGuides.vertical.to - alignmentGuides.vertical.from,
+                background: "#2563eb",
+                boxShadow: "0 0 0 1px rgba(37,99,235,.2)",
+                pointerEvents: "none",
+                zIndex: 1000,
+              }}
+            />
+          ) : null}
+          {alignmentGuides.horizontal !== undefined ? (
+            <div
+              data-alignment-guide="horizontal"
+              style={{
+                position: "absolute",
+                left: alignmentGuides.horizontal.from,
+                top: alignmentGuides.horizontal.position,
+                width: alignmentGuides.horizontal.to - alignmentGuides.horizontal.from,
+                height: 1,
+                background: "#2563eb",
+                boxShadow: "0 0 0 1px rgba(37,99,235,.2)",
+                pointerEvents: "none",
+                zIndex: 1000,
+              }}
+            />
+          ) : null}
+        </ViewportPortal>
         <Background gap={16} color="#e5e9ef" />
         <Controls showInteractive={false} />
         <MiniMap pannable zoomable />

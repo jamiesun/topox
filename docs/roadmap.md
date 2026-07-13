@@ -84,6 +84,10 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 
   doc 进、diff 出；拖拽走本地状态松手一次提交；dagre 自动布局以 diff 形式产出；组可视化（展开=派生包围盒容器、折叠=代理节点、跨边界边重定向合并、嵌套父盖子）。证据：`packages/editor/src/{TopoCanvas,convert,layout}.tsx|ts`，`packages/editor/tests/editor.test.ts`（group projection 等）。
 
+- **编辑手感**
+
+  选中节点可通过 Arrange 或 Cmd/Ctrl+D 复制，副本保留属性和分组并偏移落位；Inspector 可锁定节点，锁定节点仍可选择但不会单独或随多选拖动；拖动接近其它节点边缘/中线时显示参考线并吸附。复制、锁定和最终布局均只通过可逆 GraphDiff 进入 History。证据：`packages/core/src/editing.ts`；`packages/editor/src/{alignment,convert,TopoCanvas}.ts|tsx`；`apps/studio/e2e/edit.spec.ts`。
+
 - **DSL 编译器（AI 输出格式）**
 
   行导向 DSL 逐行容错编译为 GraphDiff；`docToDsl` 反向序列化；附 LLM 提示指南。证据：`packages/dsl/src/`，`packages/dsl/tests/dsl.test.ts`。
@@ -148,9 +152,9 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 
   GraphML、DOT 等格式的导入导出，服务于与既有网络工具生态的互通。
 
-- **编辑器纵深**
+- **编辑器纵深（基础能力已落地）**
 
-  搜索结果画布高亮与定位跳转、对齐/吸附、节点复制、锁定等编辑手感增强。服务于"编辑手感 > 渲染华丽"的品质排序。
+  搜索结果画布高亮与定位跳转、对齐/吸附、节点复制和锁定已完成；后续继续用真实规模拓扑校准多选、布局和交互性能。服务于"编辑手感 > 渲染华丽"的品质排序。
 
 ## 完成的样子
 
@@ -177,6 +181,7 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 | 一级功能 | 风险级别 | Happy Path E2E | 失败路径 | 权限角色覆盖 | 失败恢复/回滚 | 证据（测试路径/用例） |
 | --- | --- | --- | --- | --- | --- | --- |
 | 图编辑（节点/边增删改、移动、连线） | 中 | ✅ Inspector 改 label→画布更新 | ✅ diff 冲突拒绝 | 不适用 | ✅ UI 级 undo 还原已验证 | `apps/studio/e2e/edit.spec.ts`；内核层 `packages/core/tests/core.test.ts` applyDiff/invertDiff/History |
+| 编辑手感（复制/锁定/对齐吸附） | 中 | ✅ Arrange/快捷键复制；Inspector 锁定；拖动吸附并显示参考线 | ✅ 锁定节点单独或随多选拖动均保持原位 | 不适用 | ✅ 复制、锁定和吸附布局均有 UI 级 undo | `apps/studio/e2e/edit.spec.ts`；`packages/core/tests/core.test.ts` makeDuplicateNodes；`packages/editor/tests/editor.test.ts` lock/alignment projection |
 | 撤销/重做 | 中 | ✅ 编辑后 ↩ 还原（UI 级） | ✅ 空栈边界 | 不适用 | ✅ 本身即回滚机制 | `apps/studio/e2e/edit.spec.ts`；`packages/core/tests/core.test.ts` History |
 | 分组（创建/解组/折叠/展开/嵌套） | 中 | ✅ UI 级创建→折叠→展开→解组 | ✅ 组循环/多父校验 | 不适用 | ✅ UI 级 undo 恢复解组 | `apps/studio/e2e/capabilities.spec.ts`；`packages/editor/tests/editor.test.ts` group projection；`packages/core/tests/core.test.ts` validate |
 | AI/DSL 管线（Prompt→DSL→Diff→Preview→Apply） | 高（外部 API 副作用 + 批量改文档） | ✅ DSL→Preview→Apply→undo 贯穿 studio | ✅ 坏行报行级错误且文档不变（UI 级）+ 编译容错单测 | 不适用 | ✅ Apply 后 UI 级 undo 已验证 | `apps/studio/e2e/dsl.spec.ts`；`packages/dsl/tests/dsl.test.ts` compileDsl/tokenize |
@@ -195,7 +200,7 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 
 覆盖现状：
 
-- 三条改状态主链路（图编辑、AI 管线 Apply、导入）、共享 Studio 保存闭环，以及运行态叠加/Timeline/Trace/快照、分组、布局、搜索、导出、embed 挂载均已有贯穿公开边界的 Playwright E2E（`apps/studio/e2e/`，CI 强制运行）。
+- 三条改状态主链路（图编辑、AI 管线 Apply、导入）、共享 Studio 保存闭环，以及运行态叠加/Timeline/Trace/快照、分组、布局、搜索、复制/锁定/吸附、导出、embed 挂载均已有贯穿公开边界的 Playwright E2E（`apps/studio/e2e/`，CI 强制运行）。
 - 各"待核验"项在补测试或人工确认后更新本矩阵。
 
 ## 维护规则

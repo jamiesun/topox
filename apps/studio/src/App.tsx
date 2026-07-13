@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { GraphDiff, RuntimeState, TopoDoc } from "@topox/core";
+import type { GraphDiff, NodeLayout, RuntimeState, TopoDoc } from "@topox/core";
 import {
   applyDiff,
   applyRuntimeEvent,
   emptyRuntime,
   History,
   inventoryToCsv,
+  makeDuplicateNodes,
   makeGroupOps,
   makeGroupUpdate,
   makeUngroupOps,
@@ -18,7 +19,7 @@ import {
   validateDoc,
 } from "@topox/core";
 import { compileDsl } from "@topox/dsl";
-import { autoLayoutDiff, statusPalette, TopoCanvas } from "@topox/editor";
+import { autoLayoutDiff, statusPalette, toFlow, TopoCanvas } from "@topox/editor";
 import { docFromYaml, docToYaml, parseMermaid, toMermaid } from "@topox/interop";
 import { AiPanel } from "./AiPanel.js";
 import { demoDoc } from "./demo.js";
@@ -372,6 +373,47 @@ export function App() {
     [doc.graph.edges, edgeSelection],
   );
 
+  const duplicateSelected = useCallback(() => {
+    if (selection.length === 0 || previewDoc !== null) return;
+    const positions: Record<string, NodeLayout> = {};
+    for (const node of toFlow(history.doc, viewId).nodes) {
+      if (!selection.includes(node.id)) continue;
+      positions[node.id] = {
+        ...node.position,
+        ...(node.width !== undefined ? { width: node.width } : {}),
+        ...(node.height !== undefined ? { height: node.height } : {}),
+      };
+    }
+    const result = makeDuplicateNodes(history.doc, viewId, selection, { positions });
+    if (result.diff.ops.length > 0) pushDiff(result.diff);
+  }, [history, previewDoc, pushDiff, selection, viewId]);
+
+  useEffect(() => {
+    const handleDuplicateShortcut = (event: KeyboardEvent) => {
+      if (
+        event.repeat ||
+        event.key.toLowerCase() !== "d" ||
+        (!event.metaKey && !event.ctrlKey) ||
+        event.altKey ||
+        tab !== "canvas"
+      ) {
+        return;
+      }
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName))
+      ) {
+        return;
+      }
+      if (selection.length === 0 || previewDoc !== null) return;
+      event.preventDefault();
+      duplicateSelected();
+    };
+    window.addEventListener("keydown", handleDuplicateShortcut);
+    return () => window.removeEventListener("keydown", handleDuplicateShortcut);
+  }, [duplicateSelected, previewDoc, selection.length, tab]);
+
   const groupSelected = useCallback(() => {
     if (selection.length < 2) return;
     const id = `grp-${Date.now().toString(36)}`;
@@ -507,6 +549,12 @@ export function App() {
           buttonStyle={styles.btn}
           items={[
             { label: "Auto layout", hint: "dagre TB", onSelect: autoLayout },
+            {
+              label: "Duplicate selection",
+              hint: "⌘/Ctrl+D",
+              disabled: selection.length === 0 || previewDoc !== null,
+              onSelect: duplicateSelected,
+            },
             {
               label: "Group selection",
               hint: "2+ nodes",

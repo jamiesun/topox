@@ -12,3 +12,10 @@ export {
   type SearchProjection,
 } from "./convert.js";
 export { autoLayoutDiff, type AutoLayoutOptions } from "./layout.js";
+export {
+  snapToAlignment,
+  type AlignmentBox,
+  type AlignmentGuide,
+  type AlignmentGuides,
+  type AlignmentSnapResult,
+} from "./alignment.js";

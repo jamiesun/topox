@@ -33,6 +33,8 @@ export interface Node {
   description?: string;
   icon?: string;
   tags?: string[];
+  /** Prevents editor movement while keeping the node selectable and editable. */
+  locked?: boolean;
   /**
    * Binding to an external business resource (e.g. a device or service id
    * in an inventory system).

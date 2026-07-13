@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applyDiff, applyRuntimeEvent, emptyDoc, emptyRuntime, isValid, resolveRuntime, validateDoc } from "@topox/core";
 import type { TopoDoc } from "@topox/core";
 import { autoLayoutDiff } from "../src/layout.js";
+import { snapToAlignment } from "../src/alignment.js";
 import { toFlow, groupFlowId, transitiveNodeMembers } from "../src/convert.js";
 
 function chainDoc(): TopoDoc {
@@ -35,6 +36,33 @@ describe("autoLayoutDiff", () => {
     const once = applyDiff(doc, autoLayoutDiff(doc, "default"));
     const again = autoLayoutDiff(once, "default");
     expect(again.ops).toHaveLength(0);
+  });
+});
+
+describe("snapToAlignment", () => {
+  it("snaps independently to the nearest center and edge within the threshold", () => {
+    const snapped = snapToAlignment(
+      { id: "moving", x: 407, y: 148, width: 80, height: 40 },
+      [{ id: "target", x: 400, y: 100, width: 100, height: 50 }],
+    );
+
+    expect(snapped.position).toEqual({ x: 410, y: 150 });
+    expect(snapped.guides).toEqual({
+      vertical: { position: 450, from: 100, to: 190 },
+      horizontal: { position: 150, from: 400, to: 500 },
+    });
+  });
+
+  it("leaves the candidate unchanged outside the snap threshold", () => {
+    const snapped = snapToAlignment(
+      { id: "moving", x: 430, y: 160, width: 80, height: 40 },
+      [{ id: "target", x: 400, y: 100, width: 100, height: 50 }],
+    );
+
+    expect(snapped).toEqual({
+      position: { x: 430, y: 160 },
+      guides: {},
+    });
   });
 });
 
@@ -76,6 +104,30 @@ describe("toFlow", () => {
       searchCurrent: false,
     });
     expect(JSON.stringify(doc)).not.toContain("searchMatch");
+  });
+
+  it("keeps locked nodes selectable while disabling their drag gesture", () => {
+    const doc = applyDiff(chainDoc(), {
+      ops: [
+        {
+          op: "update_node",
+          id: "b",
+          before: {},
+          after: { locked: true },
+        },
+      ],
+    });
+    const { nodes } = toFlow(doc, "default");
+    const locked = nodes.find((node) => node.id === "b")!;
+    const unlocked = nodes.find((node) => node.id === "a")!;
+
+    expect(locked).toMatchObject({
+      draggable: false,
+      data: { locked: true },
+    });
+    expect(locked.selectable).not.toBe(false);
+    expect(unlocked.draggable).toBeUndefined();
+    expect(unlocked.data.locked).toBe(false);
   });
 });
 
@@ -161,6 +213,26 @@ describe("group projection", () => {
     const mergedToD = edges.filter((e) => e.source === groupFlowId("g1") && e.target === "d");
     expect(mergedToD).toHaveLength(1);
     expect(mergedToD[0]!.label).toBe("2×");
+  });
+
+  it("disables a collapsed proxy when every hidden member is locked", () => {
+    const doc = applyDiff(groupedDoc(), {
+      ops: [
+        { op: "update_node", id: "a", before: {}, after: { locked: true } },
+        { op: "update_node", id: "b", before: {}, after: { locked: true } },
+        {
+          op: "update_group",
+          id: "g1",
+          before: { collapsed: null },
+          after: { collapsed: true },
+        },
+      ],
+    });
+    const proxy = toFlow(doc, "default").nodes.find(
+      (node) => node.id === groupFlowId("g1"),
+    )!;
+
+    expect(proxy.draggable).toBe(false);
   });
 
   it("a collapsed parent overrides expanded children (one proxy, no inner artifacts)", () => {

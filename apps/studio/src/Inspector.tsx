@@ -386,6 +386,19 @@ export function Inspector({
         <DraftField value={node.tags?.join(", ") ?? ""} onCommit={(v) => setField("tags", v)} placeholder="—" />
         <label style={labelStyle}>ref</label>
         <DraftField value={node.ref ?? ""} onCommit={(v) => setField("ref", v)} placeholder="external resource id" mono />
+        <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 6 }}>
+          <input
+            type="checkbox"
+            checked={node.locked === true}
+            onChange={(event) => {
+              const next = { ...node };
+              if (event.target.checked) next.locked = true;
+              else delete next.locked;
+              patchNode(next, `${event.target.checked ? "lock" : "unlock"} ${node.id}`);
+            }}
+          />
+          locked
+        </label>
 
         <AttrsEditor
           attrs={node.attrs}

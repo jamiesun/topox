@@ -14,6 +14,8 @@ export interface TopoNodeData extends Record<string, unknown> {
   nodeType: string;
   ref?: string;
   icon?: string;
+  /** Document-backed edit lock; nodes remain selectable. */
+  locked: boolean;
   /** Live overlay — resolved runtime, never stored in the doc. */
   status?: NodeStatus;
   message?: string;
@@ -157,6 +159,7 @@ export function toFlow(
   const layout = view?.layout ?? {};
   const idx = indexGroups(graph);
   const nodeIds = new Set(graph.nodes.map((n) => n.id));
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
 
   // ------------------------------------------------------------------
   // positions: every node gets a box (stored layout or fallback grid)
@@ -282,6 +285,8 @@ export function toFlow(
     const g = idx.byId.get(gid);
     if (!g) continue;
     const members = transitiveNodeMembers(graph, gid);
+    const allMembersLocked =
+      members.length > 0 && members.every((member) => nodeById.get(member)?.locked === true);
     const summary: Partial<Record<NodeStatus, number>> = {};
     if (runtime) {
       for (const m of members) {
@@ -295,6 +300,7 @@ export function toFlow(
       position: { x: box.x, y: box.y },
       width: box.width,
       height: box.height,
+      ...(allMembersLocked ? { draggable: false } : {}),
       data: {
         label: g.label,
         kind: "proxy",
@@ -318,9 +324,11 @@ export function toFlow(
       position: { x: box.x, y: box.y },
       width: box.width,
       height: box.height,
+      ...(node.locked === true ? { draggable: false } : {}),
       data: {
         label: node.label,
         nodeType: node.type,
+        locked: node.locked === true,
         ...(node.ref !== undefined ? { ref: node.ref } : {}),
         ...(node.icon !== undefined ? { icon: node.icon } : {}),
         ...(rt?.status !== undefined ? { status: rt.status } : {}),
