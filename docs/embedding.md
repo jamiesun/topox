@@ -142,6 +142,9 @@ GET /api/topo/docs/42   → 200 application/json  (TopoDoc)
 PUT /api/topo/docs/42   ← TopoDoc JSON          (store it; 2xx = saved)
 ```
 
+A complete stdlib-only Go reference host (static studio + doc store + SSE
+feed) lives in [`examples/studio-go-host/`](../examples/studio-go-host/).
+
 Typical flow: your app shows the read-only embed; an **Edit** button opens
 `/studio/?src=…&ret=…`; the user edits, saves, and comes back — the embed
 re-fetches and renders the updated document.

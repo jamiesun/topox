@@ -90,7 +90,7 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 
 - **共享 Studio 文档源协议**
 
-  `?src=<url>&save=<url>&ret=<url>`：studio 从宿主后端 GET 加载文档、PUT 保存回去（同域自带 cookie）、可跳回业务系统；未保存改动有 `Save*` 标记与离开页警告。业务前端用只读 embed 展示，编辑跳转共享 studio，一份部署服务所有系统。证据：`apps/studio/src/docsource.ts`，接线在 `App.tsx`，指南 `docs/embedding.md`。
+  `?src=<url>&save=<url>&ret=<url>`：studio 从宿主后端 GET 加载文档、PUT 保存回去（同域自带 cookie）、可跳回业务系统；未保存改动有 `Save*` 标记与离开页警告。业务前端用只读 embed 展示，编辑跳转共享 studio，一份部署服务所有系统。证据：`apps/studio/src/docsource.ts`，接线在 `App.tsx`，指南 `docs/embedding.md`；Go 参考后端 `examples/studio-go-host/`（标准库实现：静态托管 + 文档存储 + SSE 演示流，已手工验证同域 load→edit→save 落盘闭环）。
 
 - **搜索**
 
