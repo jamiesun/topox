@@ -181,11 +181,11 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 | 自动布局（dagre） | 中 | ❌ 缺口（无 UI 级 E2E） | 待核验 | 不适用 | ✅ 布局以 diff 产出，可 undo | `packages/editor/tests/editor.test.ts` autoLayoutDiff（含幂等性） |
 | SSE 运行态接入（connectRuntimeSSE） | 中 | ✅ 单测覆盖 snapshot→patch 折叠（浏览器级 E2E 缺口） | ✅ 畸形消息 onError 后继续流 | 不适用 | ✅ 叠加层可整体清除；close 幂等 | `packages/core/tests/sse.test.ts` |
 | 嵌入挂载（mountTopoView） | 中 | ❌ 缺口（示例页手工验证，浏览器 E2E 待补） | 待核验 | 不适用 | ✅ 编辑走同一 diff/undo 管线 | `examples/embed-plain/`（手工冒烟）；UI 级无 |
-| 共享 Studio 文档源（src/save/ret） | 高（PUT 覆盖宿主文档） | ❌ 缺口（浏览器手工验证 load→edit→save 闭环，无自动化） | ✅ 加载校验失败回退 demo 并报错；保存失败可重试 | 待核验（依赖宿主端点鉴权，同域 cookie 透传） | ✅ 保存失败不动本地状态；未保存改动有离开警告 | `apps/studio/src/docsource.ts`（手工冒烟）；自动化无 |
+| 共享 Studio 文档源（src/save/ret） | 高（PUT 覆盖宿主文档） | ✅ ?src 加载→编辑→PUT→Saved 闭环（PUT body 契约断言） | ✅ 加载 404 回退 demo 并报错（UI 级）；PUT 500 报错可重试 | 待核验（依赖宿主端点鉴权，同域 cookie 透传） | ✅ PUT 失败本地编辑完好、重试后成功（UI 级）；未保存改动有离开警告 | `apps/studio/e2e/sharedstudio.spec.ts` |
 
 缺口的最低期望：
 
-- 三条改状态主链路（图编辑、AI 管线 Apply、导入）已有贯穿 studio 的 Playwright E2E（`apps/studio/e2e/`，CI 强制运行）。剩余 ❌ 行按同一模式补齐即可，优先级：共享 Studio 保存闭环 > 运行态叠加/Timeline > 分组/布局/搜索/导出。
+- 三条改状态主链路（图编辑、AI 管线 Apply、导入）与共享 Studio 保存闭环已有贯穿 studio 的 Playwright E2E（`apps/studio/e2e/`，CI 强制运行）。剩余 ❌ 行按同一模式补齐即可，优先级：运行态叠加/Timeline > 分组/布局/搜索/导出。
 - 各"待核验"项在补测试或人工确认后更新本矩阵。
 
 ## 维护规则
