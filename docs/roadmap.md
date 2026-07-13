@@ -102,7 +102,7 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 
 - **搜索**
 
-  按名称/标签/类型/属性过滤节点。证据：`packages/core/src/inventory.ts`（`searchNodes`），core.test.ts 中含字段匹配断言。
+  按名称/标签/类型/属性过滤节点；画布高亮匹配、弱化非匹配，Enter/Shift+Enter 或按钮可在结果间跳转并自动聚焦视口。搜索只影响视图，不产生 diff。证据：`packages/core/src/inventory.ts`（`searchNodes`）；`packages/editor/src/{convert,TopoCanvas}.ts|tsx`；`apps/studio/e2e/capabilities.spec.ts`。
 
 - **SSE 运行态接入客户端**
 
@@ -187,7 +187,7 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 | 节点 Trace（事件/指标历史） | 低 | ✅ UI 级选中节点→查看状态/指标历史→跳转 Timeline | 不适用（只读运行态） | 不适用 | 不适用（只读，不改文档） | `apps/studio/e2e/runtime.spec.ts`；`packages/core/tests/core.test.ts` runtime timeline history |
 | 运行态快照（保存/加载） | 中 | ✅ Simulate→保存→刷新→加载→回放/逐帧 | ✅ 未知版本拒绝且当前回放、文档、History 不变 | 不适用 | ✅ 加载先校验后原子替换 | `apps/studio/e2e/snapshot.spec.ts`；`packages/core/tests/core.test.ts` runtime snapshots |
 | Inspector 属性编辑（基础/attrs/JSON） | 中 | ✅ label 编辑贯穿 UI（attrs/JSON 编辑待补） | 待核验（JSON 编辑的 id 不变/端点校验在 `apps/studio/src/Inspector.tsx`，无测试） | 不适用 | ✅ 编辑走 update diff，UI 级 undo 已验证 | `apps/studio/e2e/edit.spec.ts`；内核层 `core.test.ts` makeNodeUpdate |
-| 搜索（名称/标签/类型/属性） | 低 | ✅ UI 级命中计数 + Inventory 过滤 | 不适用（只读过滤） | 不适用 | 不适用（只读） | `apps/studio/e2e/capabilities.spec.ts`；`packages/core/tests/core.test.ts` searchNodes 断言 |
+| 搜索（名称/标签/类型/属性） | 低 | ✅ UI 级高亮/弱化 + 前后结果定位 + Inventory 过滤 | 不适用（只读过滤） | 不适用 | 不适用（只读，History 保持不变） | `apps/studio/e2e/capabilities.spec.ts`；`packages/editor/tests/editor.test.ts` search projection；`packages/core/tests/core.test.ts` searchNodes 断言 |
 | 自动布局（dagre） | 中 | ✅ UI 级坐标变化 | 待核验 | 不适用 | ✅ UI 级 undo 恢复原坐标 | `apps/studio/e2e/capabilities.spec.ts`；`packages/editor/tests/editor.test.ts` autoLayoutDiff（含幂等性） |
 | SSE 运行态接入（connectRuntimeSSE） | 中 | ✅ 单测覆盖 snapshot→patch 折叠（浏览器级 E2E 缺口） | ✅ 畸形消息 onError 后继续流 | 不适用 | ✅ 叠加层可整体清除；close 幂等 | `packages/core/tests/sse.test.ts` |
 | 嵌入挂载（mountTopoView） | 中 | ✅ 纯 HTML 宿主挂载 + pushRuntimeEvent + destroy | 待核验 | 不适用 | ✅ destroy 清空挂载点；编辑走同一 diff/undo 管线 | `apps/studio/e2e/embed.spec.ts`；`examples/embed-plain/` |

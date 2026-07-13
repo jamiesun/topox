@@ -78,6 +78,7 @@ export function App() {
   const [sideTab, setSideTab] = useState<SideTab>("inspect");
   const [dsl, setDsl] = useState("");
   const [query, setQuery] = useState("");
+  const [searchIndex, setSearchIndex] = useState(0);
   const [selection, setSelection] = useState<string[]>([]);
   const [edgeSelection, setEdgeSelection] = useState<string[]>([]);
   const [groupSelection, setGroupSelection] = useState<string[]>([]);
@@ -327,6 +328,30 @@ export function App() {
   const inventory = useMemo(() => toInventory(doc.graph), [doc.graph]);
   const matches = useMemo(() => searchNodes(doc.graph, query), [doc.graph, query]);
   const matchedIds = useMemo(() => new Set(matches.map((n) => n.id)), [matches]);
+  const searchActive = query.trim() !== "";
+  const activeSearchIndex =
+    matches.length === 0 ? 0 : Math.min(searchIndex, matches.length - 1);
+  const currentMatch = searchActive ? matches[activeSearchIndex] : undefined;
+  const canvasSearch = useMemo(
+    () =>
+      searchActive
+        ? {
+            matchedNodeIds: matchedIds,
+            ...(currentMatch !== undefined ? { currentNodeId: currentMatch.id } : {}),
+          }
+        : undefined,
+    [currentMatch, matchedIds, searchActive],
+  );
+  const moveSearch = useCallback(
+    (direction: -1 | 1) => {
+      if (!searchActive || matches.length === 0) return;
+      setSearchIndex((current) => {
+        const normalized = Math.min(current, matches.length - 1);
+        return (normalized + direction + matches.length) % matches.length;
+      });
+    },
+    [matches.length, searchActive],
+  );
   const selectedNode = useMemo(
     () => doc.graph.nodes.find((n) => selection.length === 1 && n.id === selection[0]),
     [doc.graph.nodes, selection],
@@ -564,19 +589,54 @@ export function App() {
             e.target.value = "";
           }}
         />
-        <input
-          placeholder="search nodes…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          style={{
-            marginLeft: "auto",
-            border: "1px solid #d0d7de",
-            borderRadius: 6,
-            padding: "5px 10px",
-            fontSize: 12.5,
-            width: 180,
-          }}
-        />
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4 }}>
+          <input
+            placeholder="search nodes…"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setSearchIndex(0);
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              e.preventDefault();
+              moveSearch(e.shiftKey ? -1 : 1);
+            }}
+            style={{
+              border: "1px solid #d0d7de",
+              borderRadius: 6,
+              padding: "5px 10px",
+              fontSize: 12.5,
+              width: 180,
+            }}
+          />
+          {searchActive ? (
+            <>
+              <span
+                aria-label="Search result position"
+                style={{ minWidth: 38, textAlign: "center", color: "#64748b", fontSize: 11.5 }}
+              >
+                {matches.length === 0 ? "0 / 0" : `${activeSearchIndex + 1} / ${matches.length}`}
+              </span>
+              <button
+                style={{ ...styles.btn, padding: "4px 7px" }}
+                title="Previous search result"
+                disabled={matches.length === 0}
+                onClick={() => moveSearch(-1)}
+              >
+                ↑
+              </button>
+              <button
+                style={{ ...styles.btn, padding: "4px 7px" }}
+                title="Next search result"
+                disabled={matches.length === 0}
+                onClick={() => moveSearch(1)}
+              >
+                ↓
+              </button>
+            </>
+          ) : null}
+        </div>
       </div>
 
       {error ? (
@@ -621,6 +681,7 @@ export function App() {
               onSelect={handleSelect}
               readOnly={previewDoc !== null}
               {...(resolvedRuntime !== undefined ? { runtime: resolvedRuntime } : {})}
+              {...(canvasSearch !== undefined ? { search: canvasSearch } : {})}
             />
             {timelineRange !== null ? (
               <TimelineBar

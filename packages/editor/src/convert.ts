@@ -18,6 +18,10 @@ export interface TopoNodeData extends Record<string, unknown> {
   status?: NodeStatus;
   message?: string;
   metrics?: Record<string, MetricValue>;
+  /** Ephemeral search projection; never stored in the document. */
+  searchMatch?: boolean;
+  searchCurrent?: boolean;
+  searchDimmed?: boolean;
 }
 
 /** Data for group container (expanded) and proxy (collapsed) nodes. */
@@ -30,9 +34,18 @@ export interface TopoGroupData extends Record<string, unknown> {
   depth: number;
   /** Proxy only: rollup of member statuses from the runtime overlay. */
   statusSummary?: Partial<Record<NodeStatus, number>>;
+  /** A collapsed proxy inherits search state from its hidden members. */
+  searchMatch?: boolean;
+  searchCurrent?: boolean;
+  searchDimmed?: boolean;
 }
 
 export type TopoRFNode = RFNode<TopoNodeData | TopoGroupData>;
+
+export interface SearchProjection {
+  matchedNodeIds: ReadonlySet<string>;
+  currentNodeId?: string;
+}
 
 const DEFAULT_WIDTH = 150;
 const DEFAULT_HEIGHT = 60;
@@ -52,6 +65,19 @@ export function formatMetrics(metrics: Record<string, MetricValue>, max = 3): st
     .slice(0, max)
     .map(([k, v]) => `${k} ${typeof v === "number" ? +v.toFixed(1) : v}`)
     .join(" · ");
+}
+
+function projectSearch(nodeIds: readonly string[], search: SearchProjection | undefined) {
+  if (search === undefined) return {};
+  const searchCurrent =
+    search.currentNodeId !== undefined && nodeIds.includes(search.currentNodeId);
+  const searchMatch =
+    searchCurrent || nodeIds.some((nodeId) => search.matchedNodeIds.has(nodeId));
+  return {
+    searchMatch,
+    searchCurrent,
+    searchDimmed: !searchMatch,
+  };
 }
 
 interface Box {
@@ -124,6 +150,7 @@ export function toFlow(
   doc: TopoDoc,
   viewId: string,
   runtime?: ResolvedRuntime,
+  search?: SearchProjection,
 ): { nodes: TopoRFNode[]; edges: RFEdge[] } {
   const { graph } = doc;
   const view: View | undefined = doc.views.find((v) => v.id === viewId) ?? doc.views[0];
@@ -275,6 +302,7 @@ export function toFlow(
         memberCount: members.length,
         depth: idx.depth.get(gid) ?? 0,
         ...(Object.keys(summary).length > 0 ? { statusSummary: summary } : {}),
+        ...projectSearch(members, search),
       },
     });
   }
@@ -298,6 +326,7 @@ export function toFlow(
         ...(rt?.status !== undefined ? { status: rt.status } : {}),
         ...(rt?.message !== undefined ? { message: rt.message } : {}),
         ...(rt?.metrics !== undefined ? { metrics: rt.metrics } : {}),
+        ...projectSearch([node.id], search),
       },
     });
   }

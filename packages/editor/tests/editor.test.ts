@@ -52,6 +52,31 @@ describe("toFlow", () => {
     expect(edges).toHaveLength(2);
     expect(edges[0]).toMatchObject({ source: "a", target: "b" });
   });
+
+  it("projects search matches, the current result, and dimmed nonmatches", () => {
+    const doc = chainDoc();
+    const { nodes } = toFlow(doc, "default", undefined, {
+      matchedNodeIds: new Set(["b", "c"]),
+      currentNodeId: "b",
+    });
+
+    expect(nodes.find((node) => node.id === "a")?.data).toMatchObject({
+      searchDimmed: true,
+      searchMatch: false,
+      searchCurrent: false,
+    });
+    expect(nodes.find((node) => node.id === "b")?.data).toMatchObject({
+      searchDimmed: false,
+      searchMatch: true,
+      searchCurrent: true,
+    });
+    expect(nodes.find((node) => node.id === "c")?.data).toMatchObject({
+      searchDimmed: false,
+      searchMatch: true,
+      searchCurrent: false,
+    });
+    expect(JSON.stringify(doc)).not.toContain("searchMatch");
+  });
 });
 
 describe("runtime overlay projection", () => {

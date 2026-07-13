@@ -84,13 +84,41 @@ test("auto layout changes node coordinates and undo restores them", async ({ pag
   expect(await historyCount(page)).toBe(0);
 });
 
-test("search reports the correct match and filters the inventory without editing", async ({ page }) => {
+test("search highlights canvas matches, navigates results, and remains read-only", async ({ page }) => {
   await page.goto("/");
   await waitForCanvas(page);
 
-  await page.getByPlaceholder("search nodes…").fill("PostgreSQL");
-  await expect(page.getByText(/8 nodes · 7 edges · 2 groups · 1 match\(es\)/)).toBeVisible();
+  const search = page.getByPlaceholder("search nodes…");
+  const cpeA = page.locator('.react-flow__node[data-id="cpe1"]');
+  const cpeB = page.locator('.react-flow__node[data-id="cpe2"]');
+  const firewall = page.locator('.react-flow__node[data-id="fw"]');
+  const viewport = page.locator(".react-flow__viewport");
+  const viewportTransform = () =>
+    viewport.evaluate((element) => (element as HTMLElement).style.transform);
 
+  await search.fill("CPE");
+  await expect(page.getByText(/8 nodes · 7 edges · 2 groups · 2 match\(es\)/)).toBeVisible();
+  await expect(page.getByLabel("Search result position")).toHaveText("1 / 2");
+  await expect(cpeA.locator('[data-search-match="true"]')).toBeVisible();
+  await expect(cpeA.locator('[data-search-current="true"]')).toBeVisible();
+  await expect(cpeB.locator('[data-search-match="true"]')).toBeVisible();
+  await expect(firewall.locator('[data-search-dimmed="true"]')).toBeVisible();
+  const firstViewport = await viewportTransform();
+
+  await search.press("Enter");
+  await expect(page.getByLabel("Search result position")).toHaveText("2 / 2");
+  await expect(cpeB.locator('[data-search-current="true"]')).toBeVisible();
+  await expect.poll(viewportTransform).not.toBe(firstViewport);
+
+  await search.press("Shift+Enter");
+  await expect(page.getByLabel("Search result position")).toHaveText("1 / 2");
+  await expect(cpeA.locator('[data-search-current="true"]')).toBeVisible();
+
+  await search.fill("");
+  await expect(cpeA.locator("[data-search-match]")).toHaveCount(0);
+  await expect(firewall.locator("[data-search-dimmed]")).toHaveCount(0);
+
+  await search.fill("PostgreSQL");
   await page.getByRole("button", { name: "Inventory", exact: true }).click();
   const rows = page.locator("tbody tr");
   await expect(rows).toHaveCount(1);

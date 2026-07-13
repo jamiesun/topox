@@ -22,6 +22,7 @@ import {
   type Node as RFNode,
   type NodeChange,
   type NodeProps,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import type { DiffOp, GraphDiff, NodeStatus, ResolvedRuntime, TopoDoc } from "@topox/core";
 import { makeMembershipCleanupOps, makeSetLayout } from "@topox/core";
@@ -31,6 +32,7 @@ import {
   formatMetrics,
   toFlow,
   transitiveNodeMembers,
+  type SearchProjection,
   type TopoGroupData,
   type TopoNodeData,
   type TopoRFNode,
@@ -45,6 +47,8 @@ export interface TopoCanvasProps {
   readOnly?: boolean;
   /** Live overlay (resolveRuntime output). Purely visual; never enters diffs. */
   runtime?: ResolvedRuntime;
+  /** Read-only search projection and current result to focus. */
+  search?: SearchProjection;
 }
 
 export const statusPalette: Record<NodeStatus, string> = {
@@ -73,20 +77,41 @@ const TopoNode = memo(function TopoNode({ data, selected }: NodeProps<TopoRFNode
   const accent = typePalette[d.nodeType] ?? "#475569";
   const statusColor = d.status !== undefined ? statusPalette[d.status] : undefined;
   const borderColor =
-    d.status === "error" ? statusPalette.error : selected ? accent : "#d0d7de";
+    d.searchCurrent === true
+      ? "#2563eb"
+      : d.searchMatch === true
+        ? "#f59e0b"
+        : d.status === "error"
+          ? statusPalette.error
+          : selected
+            ? accent
+            : "#d0d7de";
+  const boxShadow =
+    d.searchCurrent === true
+      ? "0 0 0 4px rgba(37,99,235,.28), 0 4px 14px rgba(37,99,235,.18)"
+      : d.searchMatch === true
+        ? "0 0 0 3px rgba(245,158,11,.28), 0 2px 8px rgba(245,158,11,.14)"
+        : selected
+          ? `0 0 0 3px ${accent}22`
+          : "0 1px 2px rgba(0,0,0,.06)";
   return (
     <div
+      data-search-match={d.searchMatch === true ? "true" : undefined}
+      data-search-current={d.searchCurrent === true ? "true" : undefined}
+      data-search-dimmed={d.searchDimmed === true ? "true" : undefined}
       style={{
         border: `1.5px solid ${borderColor}`,
         borderLeft: `4px solid ${accent}`,
         borderRadius: 8,
-        background: "#fff",
+        background:
+          d.searchCurrent === true ? "#eff6ff" : d.searchMatch === true ? "#fffbeb" : "#fff",
         padding: "8px 12px",
         minWidth: 120,
-        boxShadow: selected ? `0 0 0 3px ${accent}22` : "0 1px 2px rgba(0,0,0,.06)",
+        boxShadow,
         fontFamily: "ui-sans-serif, system-ui, sans-serif",
-        opacity: d.status === "offline" ? 0.55 : 1,
+        opacity: d.searchDimmed === true ? 0.2 : d.status === "offline" ? 0.55 : 1,
         position: "relative",
+        transition: "opacity 160ms ease, box-shadow 160ms ease, background 160ms ease",
       }}
     >
       <Handle type="target" position={Position.Top} style={{ opacity: 0.4 }} />
@@ -193,19 +218,42 @@ const TopoGroupNode = memo(function TopoGroupNode({ data, selected }: NodeProps<
   const summary = d.statusSummary;
   return (
     <div
+      data-search-match={d.searchMatch === true ? "true" : undefined}
+      data-search-current={d.searchCurrent === true ? "true" : undefined}
+      data-search-dimmed={d.searchDimmed === true ? "true" : undefined}
       style={{
         width: "100%",
         height: "100%",
-        border: `1.5px solid ${selected ? "#6366f1" : "#b6c2d2"}`,
+        border: `1.5px solid ${
+          d.searchCurrent === true
+            ? "#2563eb"
+            : d.searchMatch === true
+              ? "#f59e0b"
+              : selected
+                ? "#6366f1"
+                : "#b6c2d2"
+        }`,
         borderRadius: 10,
-        background: "linear-gradient(#f8fafc, #eef2f7)",
-        boxShadow: selected
-          ? "0 0 0 3px rgba(99,102,241,0.15)"
-          : "2px 2px 0 #dbe2ea, 4px 4px 0 #e8edf3",
+        background:
+          d.searchCurrent === true
+            ? "linear-gradient(#eff6ff, #dbeafe)"
+            : d.searchMatch === true
+              ? "linear-gradient(#fffbeb, #fef3c7)"
+              : "linear-gradient(#f8fafc, #eef2f7)",
+        boxShadow:
+          d.searchCurrent === true
+            ? "0 0 0 4px rgba(37,99,235,.28)"
+            : d.searchMatch === true
+              ? "0 0 0 3px rgba(245,158,11,.28)"
+              : selected
+                ? "0 0 0 3px rgba(99,102,241,0.15)"
+                : "2px 2px 0 #dbe2ea, 4px 4px 0 #e8edf3",
         padding: "8px 12px",
         fontFamily: "ui-sans-serif, system-ui, sans-serif",
         boxSizing: "border-box",
         position: "relative",
+        opacity: d.searchDimmed === true ? 0.2 : 1,
+        transition: "opacity 160ms ease, box-shadow 160ms ease, background 160ms ease",
       }}
     >
       <Handle type="target" position={Position.Top} style={{ opacity: 0.4 }} />
@@ -264,14 +312,23 @@ function nextEdgeId(existing: Set<string>): string {
  * TopoCanvas is a controlled component: doc in, diffs out.
  * It renders the given View's layout and translates canvas gestures into GraphDiffs.
  */
-export function TopoCanvas({ doc, viewId, onDiff, onSelect, readOnly = false, runtime }: TopoCanvasProps) {
+export function TopoCanvas({
+  doc,
+  viewId,
+  onDiff,
+  onSelect,
+  readOnly = false,
+  runtime,
+  search,
+}: TopoCanvasProps) {
   const view = doc.views.find((v) => v.id === viewId) ?? doc.views[0];
 
   // React Flow's controlled-flow pattern: the canvas owns transient interaction
   // state (drag positions, selection) locally so dragging stays at 60fps; the
   // document is only touched once, as a diff, when the gesture ends.
-  const [flow, setFlow] = useState(() => toFlow(doc, viewId, runtime));
+  const [flow, setFlow] = useState(() => toFlow(doc, viewId, runtime, search));
   const mounted = useRef(false);
+  const flowInstance = useRef<ReactFlowInstance<TopoRFNode, RFEdge> | null>(null);
   // Positions at drag start, for proxy drags (delta moves all hidden members).
   const dragStart = useRef<Map<string, { x: number; y: number }>>(new Map());
 
@@ -280,7 +337,7 @@ export function TopoCanvas({ doc, viewId, onDiff, onSelect, readOnly = false, ru
       mounted.current = true;
       return; // initial state already computed
     }
-    const fresh = toFlow(doc, viewId, runtime);
+    const fresh = toFlow(doc, viewId, runtime, search);
     setFlow((prev) => {
       const prevNodes = new Map(prev.nodes.map((n) => [n.id, n]));
       const prevEdges = new Map(prev.edges.map((e) => [e.id, e]));
@@ -303,7 +360,36 @@ export function TopoCanvas({ doc, viewId, onDiff, onSelect, readOnly = false, ru
         }),
       };
     });
-  }, [doc, viewId, runtime]);
+  }, [doc, viewId, runtime, search]);
+
+  const focusSearchResult = useCallback(
+    (instance: ReactFlowInstance<TopoRFNode, RFEdge>) => {
+      if (search?.currentNodeId === undefined) return;
+      const target = toFlow(doc, viewId, undefined, search).nodes.find(
+        (node) => node.data.searchCurrent === true,
+      );
+      if (target === undefined) return;
+      void instance.fitView({
+        nodes: [{ id: target.id }],
+        padding: 1,
+        maxZoom: 1.35,
+        duration: 280,
+      });
+    },
+    [doc, search, viewId],
+  );
+
+  useEffect(() => {
+    if (flowInstance.current !== null) focusSearchResult(flowInstance.current);
+  }, [focusSearchResult]);
+
+  const handleInit = useCallback(
+    (instance: ReactFlowInstance<TopoRFNode, RFEdge>) => {
+      flowInstance.current = instance;
+      focusSearchResult(instance);
+    },
+    [focusSearchResult],
+  );
 
   const handleNodesChange = useCallback((changes: NodeChange<TopoRFNode>[]) => {
     // Removals go through the diff pipeline (onDelete), never the local state,
@@ -483,6 +569,7 @@ export function TopoCanvas({ doc, viewId, onDiff, onSelect, readOnly = false, ru
         onConnect={handleConnect}
         onDelete={handleDelete}
         onSelectionChange={handleSelectionChange}
+        onInit={handleInit}
         nodesDraggable={!readOnly}
         nodesConnectable={!readOnly}
         elementsSelectable
