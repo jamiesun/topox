@@ -6,6 +6,9 @@ import {
   emptyRuntime,
   History,
   inventoryToCsv,
+  makeGroupOps,
+  makeGroupUpdate,
+  makeUngroupOps,
   resolveRuntime,
   RuntimeTimeline,
   searchNodes,
@@ -71,6 +74,7 @@ export function App() {
   const [dsl, setDsl] = useState("");
   const [query, setQuery] = useState("");
   const [selection, setSelection] = useState<string[]>([]);
+  const [groupSelection, setGroupSelection] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<RuntimeState>(emptyRuntime());
   const [simulating, setSimulating] = useState(false);
@@ -139,9 +143,12 @@ export function App() {
     }
   }, []);
 
-  const handleSelect = useCallback((nodeIds: string[]) => {
+  const handleSelect = useCallback((nodeIds: string[], _edgeIds: string[], groupIds: string[] = []) => {
     setSelection((prev) =>
       prev.length === nodeIds.length && prev.every((v, i) => v === nodeIds[i]) ? prev : nodeIds,
+    );
+    setGroupSelection((prev) =>
+      prev.length === groupIds.length && prev.every((v, i) => v === groupIds[i]) ? prev : groupIds,
     );
   }, []);
 
@@ -245,6 +252,47 @@ export function App() {
     () => doc.graph.nodes.find((n) => selection.length === 1 && n.id === selection[0]),
     [doc.graph.nodes, selection],
   );
+  const selectedGroup = useMemo(
+    () => doc.graph.groups.find((g) => groupSelection.length === 1 && g.id === groupSelection[0]),
+    [doc.graph.groups, groupSelection],
+  );
+
+  const groupSelected = useCallback(() => {
+    if (selection.length < 2) return;
+    const id = `grp-${Date.now().toString(36)}`;
+    pushDiff({
+      origin: "user",
+      summary: `group ${selection.length} nodes`,
+      ops: makeGroupOps(history.doc.graph, {
+        id,
+        label: `Group (${selection.length})`,
+        children: [...selection],
+      }),
+    });
+  }, [history, pushDiff, selection]);
+
+  const ungroupSelected = useCallback(() => {
+    if (!selectedGroup) return;
+    pushDiff({
+      origin: "user",
+      summary: `ungroup ${selectedGroup.label}`,
+      ops: makeUngroupOps(history.doc.graph, selectedGroup.id),
+    });
+  }, [history, pushDiff, selectedGroup]);
+
+  const toggleSelectedGroup = useCallback(() => {
+    if (!selectedGroup) return;
+    const op = makeGroupUpdate(selectedGroup, {
+      ...selectedGroup,
+      collapsed: !(selectedGroup.collapsed ?? false),
+    });
+    if (!op) return;
+    pushDiff({
+      origin: "user",
+      summary: `${selectedGroup.collapsed === true ? "expand" : "collapse"} group ${selectedGroup.label}`,
+      ops: [op],
+    });
+  }, [pushDiff, selectedGroup]);
 
   const download = useCallback((filename: string, content: string, mime: string) => {
     const blob = new Blob([content], { type: mime });
@@ -283,6 +331,12 @@ export function App() {
         <button style={styles.btn} onClick={undo} disabled={!history.canUndo}>Undo</button>
         <button style={styles.btn} onClick={redo} disabled={!history.canRedo}>Redo</button>
         <button style={styles.btn} onClick={autoLayout}>Auto layout</button>
+        <button style={styles.btn} onClick={groupSelected} disabled={selection.length < 2} title="Group selected nodes">
+          Group
+        </button>
+        <button style={styles.btn} onClick={ungroupSelected} disabled={!selectedGroup} title="Dissolve selected group">
+          Ungroup
+        </button>
         <button style={styles.btn} onClick={() => fileInputRef.current?.click()}>Import</button>
         <button style={styles.btn} onClick={exportJson}>JSON</button>
         <button style={styles.btn} onClick={exportYaml}>YAML</button>
@@ -479,6 +533,44 @@ export function App() {
                     ) : null}
                   </div>
                 ) : null}
+              </div>
+            ) : selectedGroup ? (
+              <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 10 }}>
+                <div style={{ fontWeight: 700 }}>{selectedGroup.label}</div>
+                <div style={{ color: "#64748b", marginBottom: 6 }}>
+                  group · {selectedGroup.children.length} member(s)
+                  {selectedGroup.collapsed === true ? " · collapsed" : ""}
+                </div>
+                <label style={{ display: "block", marginTop: 4, color: "#64748b" }}>label</label>
+                <input
+                  value={selectedGroup.label}
+                  onChange={(e) => {
+                    const op = makeGroupUpdate(selectedGroup, { ...selectedGroup, label: e.target.value });
+                    if (op)
+                      pushDiff({ origin: "user", summary: `rename group ${selectedGroup.id}`, ops: [op] });
+                  }}
+                  style={{ width: "100%", border: "1px solid #d0d7de", borderRadius: 6, padding: "4px 8px", boxSizing: "border-box" }}
+                />
+                <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                  <button style={styles.btn} onClick={toggleSelectedGroup}>
+                    {selectedGroup.collapsed === true ? "Expand" : "Collapse"}
+                  </button>
+                  <button style={styles.btn} onClick={ungroupSelected}>Ungroup</button>
+                </div>
+                <div style={{ marginTop: 10, borderTop: "1px dashed #e2e8f0", paddingTop: 8 }}>
+                  <div style={{ color: "#64748b", marginBottom: 4 }}>members</div>
+                  <ul style={{ margin: 0, paddingLeft: 16 }}>
+                    {selectedGroup.children.map((c) => {
+                      const node = doc.graph.nodes.find((n) => n.id === c);
+                      const grp = node ? undefined : doc.graph.groups.find((g) => g.id === c);
+                      return (
+                        <li key={c} style={{ marginBottom: 2 }}>
+                          {node ? node.label : grp ? `${grp.label} (group)` : c}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
               </div>
             ) : (
               <div style={{ color: "#8b95a1" }}>{selection.length > 1 ? `${selection.length} nodes selected` : "select a node"}</div>

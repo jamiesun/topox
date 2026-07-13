@@ -1,4 +1,14 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  memo,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import {
   applyEdgeChanges,
   applyNodeChanges,
@@ -13,17 +23,25 @@ import {
   type NodeChange,
   type NodeProps,
 } from "@xyflow/react";
-import type { GraphDiff, NodeStatus, ResolvedRuntime, TopoDoc } from "@topox/core";
-import { makeSetLayout } from "@topox/core";
+import type { DiffOp, GraphDiff, NodeStatus, ResolvedRuntime, TopoDoc } from "@topox/core";
+import { makeMembershipCleanupOps, makeSetLayout } from "@topox/core";
 import { Handle, Position } from "@xyflow/react";
-import { formatMetrics, toFlow, type TopoNodeData, type TopoRFNode } from "./convert.js";
+import {
+  flowIdToGroupId,
+  formatMetrics,
+  toFlow,
+  transitiveNodeMembers,
+  type TopoGroupData,
+  type TopoNodeData,
+  type TopoRFNode,
+} from "./convert.js";
 
 export interface TopoCanvasProps {
   doc: TopoDoc;
   viewId: string;
   /** Every edit leaves the canvas as a diff. The canvas owns no document state. */
   onDiff: (diff: GraphDiff) => void;
-  onSelect?: (nodeIds: string[], edgeIds: string[]) => void;
+  onSelect?: (nodeIds: string[], edgeIds: string[], groupIds?: string[]) => void;
   readOnly?: boolean;
   /** Live overlay (resolveRuntime output). Purely visual; never enters diffs. */
   runtime?: ResolvedRuntime;
@@ -104,7 +122,136 @@ const TopoNode = memo(function TopoNode({ data, selected }: NodeProps<TopoRFNode
   );
 });
 
-const nodeTypes = { topo: TopoNode };
+interface GroupActions {
+  toggle: (groupId: string, collapsed: boolean) => void;
+  readOnly: boolean;
+}
+
+const GroupActionsContext = createContext<GroupActions>({ toggle: () => {}, readOnly: true });
+
+const toggleButtonStyle: CSSProperties = {
+  border: "1px solid #cbd5e1",
+  borderRadius: 5,
+  background: "#fff",
+  cursor: "pointer",
+  fontSize: 11,
+  lineHeight: "16px",
+  padding: "0 5px",
+  color: "#475569",
+};
+
+const TopoGroupNode = memo(function TopoGroupNode({ data, selected }: NodeProps<TopoRFNode>) {
+  const d = data as TopoGroupData;
+  const { toggle, readOnly } = useContext(GroupActionsContext);
+
+  if (d.kind === "container") {
+    return (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          border: `1.5px dashed ${selected ? "#6366f1" : "#b6c2d2"}`,
+          borderRadius: 12,
+          background: selected ? "rgba(99,102,241,0.06)" : "rgba(148,163,184,0.07)",
+          fontFamily: "ui-sans-serif, system-ui, sans-serif",
+          boxSizing: "border-box",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "6px 10px",
+            fontSize: 11,
+            fontWeight: 700,
+            color: "#64748b",
+            letterSpacing: 0.3,
+          }}
+        >
+          {!readOnly ? (
+            <button
+              type="button"
+              title="Collapse group"
+              style={toggleButtonStyle}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggle(d.groupId, true);
+              }}
+            >
+              ▾
+            </button>
+          ) : null}
+          <span>{d.label}</span>
+          <span style={{ fontWeight: 500, color: "#94a3b8" }}>({d.memberCount})</span>
+        </div>
+      </div>
+    );
+  }
+
+  // proxy: collapsed group stands in for its hidden members
+  const summary = d.statusSummary;
+  return (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        border: `1.5px solid ${selected ? "#6366f1" : "#b6c2d2"}`,
+        borderRadius: 10,
+        background: "linear-gradient(#f8fafc, #eef2f7)",
+        boxShadow: selected
+          ? "0 0 0 3px rgba(99,102,241,0.15)"
+          : "2px 2px 0 #dbe2ea, 4px 4px 0 #e8edf3",
+        padding: "8px 12px",
+        fontFamily: "ui-sans-serif, system-ui, sans-serif",
+        boxSizing: "border-box",
+        position: "relative",
+      }}
+    >
+      <Handle type="target" position={Position.Top} style={{ opacity: 0.4 }} />
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        {!readOnly ? (
+          <button
+            type="button"
+            title="Expand group"
+            style={toggleButtonStyle}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggle(d.groupId, false);
+            }}
+          >
+            ▸
+          </button>
+        ) : null}
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#334155" }}>{d.label}</span>
+      </div>
+      <div style={{ fontSize: 10, color: "#8b95a1", marginTop: 3, display: "flex", gap: 8 }}>
+        <span>{d.memberCount} nodes</span>
+        {summary !== undefined ? (
+          <span style={{ display: "inline-flex", gap: 5, alignItems: "center" }}>
+            {(Object.entries(summary) as [NodeStatus, number][]).map(([st, count]) => (
+              <span key={st} style={{ display: "inline-flex", gap: 2, alignItems: "center" }}>
+                <span
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: "50%",
+                    background: statusPalette[st],
+                    display: "inline-block",
+                  }}
+                />
+                {count}
+              </span>
+            ))}
+          </span>
+        ) : null}
+      </div>
+      <Handle type="source" position={Position.Bottom} style={{ opacity: 0.4 }} />
+    </div>
+  );
+});
+
+const nodeTypes = { topo: TopoNode, topoGroup: TopoGroupNode };
 
 let edgeSeq = 0;
 function nextEdgeId(existing: Set<string>): string {
@@ -125,6 +272,8 @@ export function TopoCanvas({ doc, viewId, onDiff, onSelect, readOnly = false, ru
   // document is only touched once, as a diff, when the gesture ends.
   const [flow, setFlow] = useState(() => toFlow(doc, viewId, runtime));
   const mounted = useRef(false);
+  // Positions at drag start, for proxy drags (delta moves all hidden members).
+  const dragStart = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   useEffect(() => {
     if (!mounted.current) {
@@ -170,11 +319,31 @@ export function TopoCanvas({ doc, viewId, onDiff, onSelect, readOnly = false, ru
     setFlow((prev) => ({ ...prev, edges: applyEdgeChanges(safe, prev.edges) }));
   }, []);
 
+  const handleNodeDragStart = useCallback((_event: unknown, _node: RFNode, dragged: RFNode[]) => {
+    dragStart.current = new Map(dragged.map((n) => [n.id, { ...n.position }]));
+  }, []);
+
   const handleNodeDragStop = useCallback(
     (_event: unknown, _node: RFNode, dragged: RFNode[]) => {
       if (readOnly || !view) return;
-      const ops = [];
+      const ops: DiffOp[] = [];
       for (const node of dragged) {
+        const groupId = flowIdToGroupId(node.id);
+        if (groupId !== null) {
+          // Proxy drag: translate every hidden member by the drag delta so the
+          // group's internal geometry survives collapse/expand round-trips.
+          const start = dragStart.current.get(node.id);
+          if (!start) continue;
+          const dx = Math.round(node.position.x - start.x);
+          const dy = Math.round(node.position.y - start.y);
+          if (dx === 0 && dy === 0) continue;
+          for (const member of transitiveNodeMembers(doc.graph, groupId)) {
+            const before = view.layout[member];
+            if (!before) continue; // fallback-grid nodes keep deriving positions
+            ops.push(makeSetLayout(view, member, { ...before, x: before.x + dx, y: before.y + dy }));
+          }
+          continue;
+        }
         const before = view.layout[node.id];
         const next = {
           x: Math.round(node.position.x),
@@ -188,16 +357,22 @@ export function TopoCanvas({ doc, viewId, onDiff, onSelect, readOnly = false, ru
       if (ops.length === 0) return;
       onDiff({
         origin: "user",
-        summary: ops.length === 1 ? `move ${dragged[0]?.id ?? "node"}` : `move ${ops.length} nodes`,
+        summary:
+          dragged.length === 1
+            ? `move ${flowIdToGroupId(dragged[0]?.id ?? "") ?? dragged[0]?.id ?? "node"}`
+            : `move ${dragged.length} items`,
         ops,
       });
     },
-    [onDiff, readOnly, view],
+    [doc.graph, onDiff, readOnly, view],
   );
 
   const handleConnect = useCallback(
     (connection: Connection) => {
       if (readOnly || !connection.source || !connection.target) return;
+      // Edges live between nodes; proxies are views, not entities.
+      if (flowIdToGroupId(connection.source) !== null || flowIdToGroupId(connection.target) !== null)
+        return;
       const existing = new Set(doc.graph.edges.map((e) => e.id));
       onDiff({
         origin: "user",
@@ -221,70 +396,119 @@ export function TopoCanvas({ doc, viewId, onDiff, onSelect, readOnly = false, ru
   const handleDelete = useCallback(
     (params: { nodes: RFNode[]; edges: RFEdge[] }) => {
       if (readOnly) return;
-      const nodeIds = new Set(params.nodes.map((n) => n.id));
+      const groupIds = new Set(
+        params.nodes.map((n) => flowIdToGroupId(n.id)).filter((g): g is string => g !== null),
+      );
+      const nodeIds = new Set(params.nodes.map((n) => n.id).filter((id) => flowIdToGroupId(id) === null));
       const removedEdges = doc.graph.edges.filter(
         (e) => params.edges.some((re) => re.id === e.id) || nodeIds.has(e.source) || nodeIds.has(e.target),
       );
       const removedNodes = doc.graph.nodes.filter((n) => nodeIds.has(n.id));
-      if (removedEdges.length === 0 && removedNodes.length === 0) return;
+      // Deleting a group dissolves the grouping; members stay.
+      const removedGroups = doc.graph.groups.filter((g) => groupIds.has(g.id));
+      if (removedEdges.length === 0 && removedNodes.length === 0 && removedGroups.length === 0) return;
+      // Surviving groups must not point at removed nodes/groups.
+      const removedIds = new Set<string>([...nodeIds, ...removedGroups.map((g) => g.id)]);
+      const cleanupOps = makeMembershipCleanupOps(doc.graph, removedIds);
       onDiff({
         origin: "user",
-        summary: `delete ${removedNodes.length} node(s), ${removedEdges.length} edge(s)`,
+        summary: `delete ${removedNodes.length} node(s), ${removedEdges.length} edge(s)${
+          removedGroups.length > 0 ? `, ${removedGroups.length} group(s)` : ""
+        }`,
         ops: [
           ...removedEdges.map((edge) => ({ op: "remove_edge" as const, edge })),
           ...removedNodes.map((node) => ({ op: "remove_node" as const, node })),
+          ...removedGroups.map((group) => ({ op: "remove_group" as const, group })),
+          ...cleanupOps,
         ],
       });
     },
-    [doc.graph.edges, doc.graph.nodes, onDiff, readOnly],
+    [doc.graph.edges, doc.graph.groups, doc.graph.nodes, onDiff, readOnly],
   );
 
   const handleSelectionChange = useCallback(
     (params: { nodes: RFNode[]; edges: RFEdge[] }) => {
+      const nodeIds: string[] = [];
+      const groupIds: string[] = [];
+      for (const n of params.nodes) {
+        const g = flowIdToGroupId(n.id);
+        if (g !== null) groupIds.push(g);
+        else nodeIds.push(n.id);
+      }
       onSelect?.(
-        params.nodes.map((n) => n.id),
+        nodeIds,
         params.edges.map((e) => e.id),
+        groupIds,
       );
     },
     [onSelect],
   );
 
+  const toggleGroup = useCallback(
+    (groupId: string, collapsed: boolean) => {
+      if (readOnly) return;
+      const group = doc.graph.groups.find((g) => g.id === groupId);
+      if (!group || (group.collapsed ?? false) === collapsed) return;
+      onDiff({
+        origin: "user",
+        summary: `${collapsed ? "collapse" : "expand"} group ${group.label}`,
+        ops: [
+          {
+            op: "update_group",
+            id: groupId,
+            before: { collapsed: group.collapsed ?? null },
+            after: { collapsed },
+          },
+        ],
+      });
+    },
+    [doc.graph.groups, onDiff, readOnly],
+  );
+
+  const actionsValue = useMemo<GroupActions>(
+    () => ({ toggle: toggleGroup, readOnly }),
+    [toggleGroup, readOnly],
+  );
+
   return (
-    <ReactFlow
-      nodes={flow.nodes}
-      edges={flow.edges}
-      nodeTypes={nodeTypes}
-      onNodesChange={handleNodesChange}
-      onEdgesChange={handleEdgesChange}
-      onNodeDragStop={handleNodeDragStop}
-      onConnect={handleConnect}
-      onDelete={handleDelete}
-      onSelectionChange={handleSelectionChange}
-      nodesDraggable={!readOnly}
-      nodesConnectable={!readOnly}
-      elementsSelectable
-      fitView
-      proOptions={{ hideAttribution: true }}
-      deleteKeyCode={readOnly ? null : ["Backspace", "Delete"]}
-    >
-      <svg style={{ position: "absolute", width: 0, height: 0 }}>
-        <defs>
-          <marker
-            id="topox-arrow"
-            viewBox="0 0 10 10"
-            refX="9"
-            refY="5"
-            markerWidth="7"
-            markerHeight="7"
-            orient="auto-start-reverse"
-          >
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="#9aa4b2" />
-          </marker>
-        </defs>
-      </svg>
-      <Background gap={16} color="#e5e9ef" />
-      <Controls showInteractive={false} />
-      <MiniMap pannable zoomable />
-    </ReactFlow>
+    <GroupActionsContext.Provider value={actionsValue}>
+      <ReactFlow
+        nodes={flow.nodes}
+        edges={flow.edges}
+        nodeTypes={nodeTypes}
+        onNodesChange={handleNodesChange}
+        onEdgesChange={handleEdgesChange}
+        onNodeDragStart={handleNodeDragStart}
+        onNodeDragStop={handleNodeDragStop}
+        onConnect={handleConnect}
+        onDelete={handleDelete}
+        onSelectionChange={handleSelectionChange}
+        nodesDraggable={!readOnly}
+        nodesConnectable={!readOnly}
+        elementsSelectable
+        fitView
+        proOptions={{ hideAttribution: true }}
+        deleteKeyCode={readOnly ? null : ["Backspace", "Delete"]}
+      >
+        <svg style={{ position: "absolute", width: 0, height: 0 }}>
+          <defs>
+            <marker
+              id="topox-arrow"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#9aa4b2" />
+            </marker>
+          </defs>
+        </svg>
+        <Background gap={16} color="#e5e9ef" />
+        <Controls showInteractive={false} />
+        <MiniMap pannable zoomable />
+      </ReactFlow>
+    </GroupActionsContext.Provider>
   );
 }
