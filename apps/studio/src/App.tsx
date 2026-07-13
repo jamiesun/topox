@@ -20,7 +20,16 @@ import {
 } from "@topox/core";
 import { compileDsl } from "@topox/dsl";
 import { autoLayoutDiff, statusPalette, toFlow, TopoCanvas } from "@topox/editor";
-import { docFromYaml, docToYaml, parseMermaid, toMermaid } from "@topox/interop";
+import {
+  docFromYaml,
+  docToYaml,
+  parseDot,
+  parseGraphML,
+  parseMermaid,
+  toDot,
+  toGraphML,
+  toMermaid,
+} from "@topox/interop";
 import { AiPanel } from "./AiPanel.js";
 import { demoDoc } from "./demo.js";
 import { fetchDoc, parseDocSource, saveDocTo } from "./docsource.js";
@@ -71,6 +80,18 @@ const styles = {
     fontSize: 12.5,
   },
 } as const;
+
+function hasCompleteLayout(doc: TopoDoc): boolean {
+  const layout = doc.views[0]?.layout ?? {};
+  return doc.graph.nodes.every((node) => {
+    const position = layout[node.id];
+    return position !== undefined && Number.isFinite(position.x) && Number.isFinite(position.y);
+  });
+}
+
+function withAutoLayout(doc: TopoDoc): TopoDoc {
+  return applyDiff(doc, autoLayoutDiff(doc, doc.views[0]?.id ?? "default"));
+}
 
 export function App() {
   const historyRef = useRef(new History(demoDoc()));
@@ -166,14 +187,24 @@ export function App() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  const importFile = useCallback((name: string, raw: string) => {    try {
+  const importFile = useCallback((name: string, raw: string) => {
+    try {
       const ext = name.toLowerCase().split(".").pop() ?? "";
       let imported: TopoDoc;
       let notice: string | null = null;
       if (ext === "mmd" || ext === "mermaid") {
         const { doc: parsed, warnings } = parseMermaid(raw);
         // Mermaid carries no geometry; give the fresh doc a usable layout.
-        imported = applyDiff(parsed, autoLayoutDiff(parsed, parsed.views[0]?.id ?? "default"));
+        imported = withAutoLayout(parsed);
+        if (warnings.length > 0) notice = `imported with warnings: ${warnings.join("; ")}`;
+      } else if (ext === "dot" || ext === "gv") {
+        const { doc: parsed, warnings } = parseDot(raw);
+        // DOT geometry is not part of the supported import subset.
+        imported = withAutoLayout(parsed);
+        if (warnings.length > 0) notice = `imported with warnings: ${warnings.join("; ")}`;
+      } else if (ext === "graphml") {
+        const { doc: parsed, warnings } = parseGraphML(raw);
+        imported = hasCompleteLayout(parsed) ? parsed : withAutoLayout(parsed);
         if (warnings.length > 0) notice = `imported with warnings: ${warnings.join("; ")}`;
       } else if (ext === "yaml" || ext === "yml") {
         imported = docFromYaml(raw);
@@ -472,6 +503,14 @@ export function App() {
     () => download(`${doc.graph.id}.mmd`, toMermaid(doc), "text/plain"),
     [doc, download],
   );
+  const exportDot = useCallback(
+    () => download(`${doc.graph.id}.dot`, toDot(doc), "text/vnd.graphviz"),
+    [doc, download],
+  );
+  const exportGraphML = useCallback(
+    () => download(`${doc.graph.id}.graphml`, toGraphML(doc), "application/graphml+xml"),
+    [doc, download],
+  );
   const exportCsv = useCallback(
     () => download(`${doc.graph.id}.inventory.csv`, inventoryToCsv(inventory), "text/csv"),
     [doc.graph.id, download, inventory],
@@ -526,10 +565,16 @@ export function App() {
           label="File"
           buttonStyle={styles.btn}
           items={[
-            { label: "Import…", hint: "json / yaml / mmd", onSelect: () => fileInputRef.current?.click() },
+            {
+              label: "Import…",
+              hint: "json / yaml / mmd / dot / graphml",
+              onSelect: () => fileInputRef.current?.click(),
+            },
             { label: "Export JSON", hint: ".topox.json", onSelect: exportJson },
             { label: "Export YAML", hint: ".topox.yaml", onSelect: exportYaml },
             { label: "Export Mermaid", hint: ".mmd", onSelect: exportMermaid },
+            { label: "Export DOT", hint: ".dot", onSelect: exportDot },
+            { label: "Export GraphML", hint: ".graphml", onSelect: exportGraphML },
             { label: "Export CSV inventory", hint: ".csv", onSelect: exportCsv },
             {
               label: "Load runtime snapshot…",
@@ -610,7 +655,7 @@ export function App() {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".json,.yaml,.yml,.mmd,.mermaid"
+          accept=".json,.yaml,.yml,.mmd,.mermaid,.dot,.gv,.graphml"
           style={{ display: "none" }}
           onChange={(e) => {
             const file = e.target.files?.[0];

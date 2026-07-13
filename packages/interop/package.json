@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@topox/core": "*",
+    "@xmldom/xmldom": "^0.9.10",
     "yaml": "^2.6.1"
   },
   "devDependencies": {

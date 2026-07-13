@@ -120,9 +120,9 @@ test("lock prevents movement until the lock change is undone", async ({ page }) 
   await expect.poll(() => peer.getAttribute("style")).toBe(peerPosition);
   expect(await historyCount(page)).toBe(1);
   await page.getByRole("button", { name: "↩" }).click();
+  await expect(node.locator('[data-locked="true"]')).toHaveCount(0);
   await node.click();
   await expect(locked).not.toBeChecked();
-  await expect(node.locator('[data-locked="true"]')).toHaveCount(0);
   expect(await historyCount(page)).toBe(0);
 
   const unlockedBox = await node.boundingBox();

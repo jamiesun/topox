@@ -21,7 +21,7 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
                 ┌─────────▼────┐  ┌──────▼─────┐ ┌─────▼────────┐
                 │ @topox/editor│  │ @topox/dsl │ │@topox/interop│
                 │ React Flow   │  │ DSL → Diff │ │ YAML·Mermaid │
-                │ doc 进 diff 出│  │ 编译器      │ │ 双向互转      │
+                │ doc 进 diff 出│  │ 编译器      │ │ DOT·GraphML   │
                 └─────────┬────┘  └──────┬─────┘ └─────┬────────┘
                           └──────────────┼─────────────┘
                                   ┌──────▼───────┐
@@ -39,7 +39,7 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 
 做好之后，TopoX 是这样的：
 
-- **一份数据，多个视图。** 同一个 `TopoDoc` 能同时支撑：对外的交付清单（Inventory/CSV）、对内的结构画布（Canvas）、机器可读的交换格式（JSON/YAML/Mermaid）。任何一个视图的变化都不需要"重新画一遍"。
+- **一份数据，多个视图。** 同一个 `TopoDoc` 能同时支撑：对外的交付清单（Inventory/CSV）、对内的结构画布（Canvas）、机器可读的交换格式（JSON/YAML/Mermaid/DOT/GraphML）。任何一个视图的变化都不需要"重新画一遍"。
 - **AI 是一等公民，但永远隔着一层 Diff。** 自然语言可以生成、修改拓扑，但 AI 的输出统一是 DSL → GraphDiff，经过预览和用户确认才落地。用户对 AI 提案的信任来自"可预览、可拒绝、可撤销"，而不是来自模型本身。
 - **运行态让拓扑活起来。** 接入真实系统后，节点有状态灯、指标行，边有流量动画；出问题时能沿时间轴回放到故障发生的那一刻。Runtime 是纯叠加层：断开数据源，文档完好如初。
 - **内核十年稳定。** 内核只认识节点、边、属性、状态；`net-router` 对内核是不透明字符串。新协议、新 AI 框架、新领域出现时，通过 type/attrs/schema/插件扩展，内核不重构。
@@ -54,7 +54,7 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 
 ## 当前能力清单
 
-以下能力均已实现并有代码/测试支撑（48 个测试全绿，`npm test`）：
+以下能力均已实现并有代码/测试支撑（`npm test`）：
 
 - **内核数据模型与可逆 Diff 引擎**
 
@@ -92,13 +92,13 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 
   行导向 DSL 逐行容错编译为 GraphDiff；`docToDsl` 反向序列化；附 LLM 提示指南。证据：`packages/dsl/src/`，`packages/dsl/tests/dsl.test.ts`。
 
-- **YAML / Mermaid 互转**
+- **YAML / Mermaid / DOT / GraphML 互转**
 
-  YAML 全保真往返；Mermaid flowchart 导出（嵌套 subgraph）与容错子集导入。证据：`packages/interop/src/{yaml,mermaid}.ts`，`packages/interop/tests/interop.test.ts`。
+  YAML 全保真往返；Mermaid flowchart、Graphviz DOT 和 GraphML 导出与容错子集导入。DOT 分组映射为嵌套 cluster；GraphML 通过标准 key/data 映射自定义属性、嵌套组与第一 View 的可用布局。支持边界见 `docs/interop.md`。证据：`packages/interop/src/{yaml,mermaid,dot,graphml}.ts`，`packages/interop/tests/interop.test.ts`。
 
 - **Studio 演示应用**
 
-  Canvas / Inventory / JSON 三视图；Inspector（节点/边/组的基础属性、自定义 attrs、JSON 整体编辑，草稿式提交）；AI 面板（Prompt → DSL → Diff → Preview → Apply，OpenAI 兼容端点）；模拟器 + Timeline DVR 条；JSON/YAML/Mermaid 导入导出 + CSV 清单导出；搜索过滤。证据：`apps/studio/src/`。**注意：studio 目前无自动化测试**（见验收矩阵）。
+  Canvas / Inventory / JSON 三视图；Inspector（节点/边/组的基础属性、自定义 attrs、JSON 整体编辑，草稿式提交）；AI 面板（Prompt → DSL → Diff → Preview → Apply，OpenAI 兼容端点）；模拟器 + Timeline DVR 条；JSON/YAML/Mermaid/DOT/GraphML 导入导出 + CSV 清单导出；搜索过滤。证据：`apps/studio/src/` 与 `apps/studio/e2e/`。
 
 - **共享 Studio 文档源协议**
 
@@ -148,9 +148,9 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 
   Agent 自动生成拓扑、修复布局、优化结构、发现异常——全部以 diff 提案形式进入既有确认管线；多人协作（实时编辑、冲突合并、评论、锁）建立在"一切皆 diff"之上；插件体系（节点/布局/导入导出/主题/Inspector/AI 插件）是内核"只认关系"承诺的兑现方式。
 
-- **更多交换格式**
+- **交换格式生态**
 
-  GraphML、DOT 等格式的导入导出，服务于与既有网络工具生态的互通。
+  GraphML 与 DOT 的常用子集已经可以导入导出，用于与 yEd、Graphviz 等既有网络工具生态互通。后续以真实工具样本校准兼容边界，并通过插件扩展其它格式，而不是让内核感知文件格式。
 
 - **编辑器纵深（基础能力已落地）**
 
@@ -185,8 +185,8 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 | 撤销/重做 | 中 | ✅ 编辑后 ↩ 还原（UI 级） | ✅ 空栈边界 | 不适用 | ✅ 本身即回滚机制 | `apps/studio/e2e/edit.spec.ts`；`packages/core/tests/core.test.ts` History |
 | 分组（创建/解组/折叠/展开/嵌套） | 中 | ✅ UI 级创建→折叠→展开→解组 | ✅ 组循环/多父校验 | 不适用 | ✅ UI 级 undo 恢复解组 | `apps/studio/e2e/capabilities.spec.ts`；`packages/editor/tests/editor.test.ts` group projection；`packages/core/tests/core.test.ts` validate |
 | AI/DSL 管线（Prompt→DSL→Diff→Preview→Apply） | 高（外部 API 副作用 + 批量改文档） | ✅ DSL→Preview→Apply→undo 贯穿 studio | ✅ 坏行报行级错误且文档不变（UI 级）+ 编译容错单测 | 不适用 | ✅ Apply 后 UI 级 undo 已验证 | `apps/studio/e2e/dsl.spec.ts`；`packages/dsl/tests/dsl.test.ts` compileDsl/tokenize |
-| 导入（JSON/YAML/Mermaid，整文档替换） | 高（可整体覆盖用户文档） | ✅ File▾ 导入 JSON 整文档替换 | ✅ 坏 JSON 与校验失败文档均被拒（UI 级） | 不适用 | ✅ 拒绝后原文档完好（UI 级） | `apps/studio/e2e/import.spec.ts`；`packages/interop/tests/interop.test.ts` yaml/mermaid import |
-| 导出（JSON/YAML/Mermaid/CSV） | 低（只读投影） | ✅ File▾ 四种下载均可解析 | 不适用（只读，无状态变更） | 不适用 | 不适用（只读） | `apps/studio/e2e/export.spec.ts`；`packages/interop/tests/interop.test.ts` yaml/mermaid export；core.test.ts inventory projection |
+| 导入（JSON/YAML/Mermaid/DOT/GraphML，整文档替换） | 高（可整体覆盖用户文档） | ✅ File▾ 导入 JSON、DOT、GraphML 整文档替换 | ✅ 坏 JSON/DOT/GraphML 与校验失败文档均被拒（UI 级） | 不适用 | ✅ 拒绝后原文档完好（UI 级） | `apps/studio/e2e/import.spec.ts`；`packages/interop/tests/interop.test.ts` 全格式 import |
+| 导出（JSON/YAML/Mermaid/DOT/GraphML/CSV） | 低（只读投影） | ✅ File▾ 六种下载均可重新解析 | 不适用（只读，无状态变更） | 不适用 | 不适用（只读） | `apps/studio/e2e/export.spec.ts`；`packages/interop/tests/interop.test.ts` 全格式 export；core.test.ts inventory projection |
 | 运行态叠加（状态/指标/活跃边） | 中 | ✅ Simulate 状态/指标叠加贯穿 UI | ✅ 未知 ref 事件安全忽略 | 不适用 | ✅ UI 级关闭模拟后叠加清除、文档与 History 不变 | `apps/studio/e2e/runtime.spec.ts`；`packages/core/tests/core.test.ts` runtime overlay；`packages/editor/tests/editor.test.ts` runtime overlay projection |
 | Timeline 回放 | 低 | ✅ UI 级历史状态定位 + 暂停/恢复/Live | ✅ 时间戳单调性 clamp | 不适用 | 不适用（只读回放，不改文档） | `apps/studio/e2e/runtime.spec.ts`；`packages/core/tests/core.test.ts` runtime timeline |
 | 节点 Trace（事件/指标历史） | 低 | ✅ UI 级选中节点→查看状态/指标历史→跳转 Timeline | 不适用（只读运行态） | 不适用 | 不适用（只读，不改文档） | `apps/studio/e2e/runtime.spec.ts`；`packages/core/tests/core.test.ts` runtime timeline history |

@@ -1,14 +1,30 @@
 import { describe, expect, it } from "vitest";
 import type { TopoDoc } from "@topox/core";
 import { emptyDoc, validateDoc } from "@topox/core";
-import { docFromYaml, docToYaml, parseMermaid, toMermaid } from "../src/index.js";
+import {
+  docFromYaml,
+  docToYaml,
+  parseDot,
+  parseGraphML,
+  parseMermaid,
+  toDot,
+  toGraphML,
+  toMermaid,
+} from "../src/index.js";
 
 function sampleDoc(): TopoDoc {
   const doc = emptyDoc("net-1", "Branch network");
   doc.graph.nodes = [
     { id: "fw", type: "net-firewall", label: "Edge Firewall", tags: ["prod"] },
     { id: "sw", type: "net-switch", label: "Core Switch" },
-    { id: "srv", type: "net-server", label: "App Server", ref: "res-42", attrs: { rack: "A3" } },
+    {
+      id: "srv",
+      type: "net-server",
+      label: "App Server",
+      icon: "server",
+      ref: "res-42",
+      attrs: { "rack unit": "A3" },
+    },
     { id: "db", type: "net-database", label: "PostgreSQL" },
   ];
   doc.graph.edges = [
@@ -111,7 +127,134 @@ graph LR
       directed: true,
     });
   });
+});
 
+describe("dot interop", () => {
+  it("exports labels, types, direction, edge labels, and nested clusters", () => {
+    const text = toDot(sampleDoc());
+
+    expect(text).toContain('digraph "net-1"');
+    expect(text).toContain('subgraph "cluster_dc"');
+    expect(text).toContain('label="Datacenter"');
+    expect(text).toContain('"fw" [label="Edge Firewall", topox_type="net-firewall"');
+    expect(text).toContain('"fw" -> "sw" [id="e1", label="uplink"');
+    expect(text).toContain('"srv" -> "db" [id="e3", dir=none');
+  });
+
+  it("round-trips the relational subset and tolerates unsupported statements", () => {
+    const { doc: back, warnings } = parseDot(toDot(sampleDoc()));
+    expect(warnings).toEqual([]);
+    expect(back.graph.meta?.name).toBe("Branch network");
+    expect(back.graph.nodes.find((node) => node.id === "fw")).toMatchObject({
+      label: "Edge Firewall",
+      type: "net-firewall",
+    });
+    expect(back.graph.nodes.find((node) => node.id === "srv")).toMatchObject({
+      icon: "server",
+      attrs: { "rack unit": "A3" },
+    });
+    expect(back.graph.groups.find((group) => group.id === "dc")?.children).toEqual(
+      expect.arrayContaining(["sw", "srv", "db", "inner"]),
+    );
+    expect(back.graph.edges.find((edge) => edge.id === "e1")).toMatchObject({
+      source: "fw",
+      target: "sw",
+      directed: true,
+      label: "uplink",
+    });
+    expect(back.graph.edges.find((edge) => edge.id === "e3")?.directed).not.toBe(true);
+    expect(validateDoc(back).filter((issue) => issue.severity === "error")).toEqual([]);
+
+    const tolerant = parseDot(`
+  digraph G {
+    a [label="Router", topox_type="net-router"];
+    unsupported ???;
+    a -> b [label="uplink"];
+  }
+  `);
+    expect(tolerant.warnings).toHaveLength(1);
+    expect(tolerant.doc.graph.nodes.map((node) => node.id)).toEqual(["a", "b"]);
+    expect(tolerant.doc.graph.edges[0]).toMatchObject({
+      source: "a",
+      target: "b",
+      directed: true,
+      label: "uplink",
+    });
+    expect(() => parseDot("not a dot graph")).toThrow(/graph or digraph/i);
+  });
+});
+
+describe("graphml interop", () => {
+    it("exports keys, custom data, nested groups, edge direction, and available layout", () => {
+      const text = toGraphML(sampleDoc());
+
+      expect(text).toContain('xmlns="http://graphml.graphdrawing.org/xmlns"');
+      expect(text).toContain('attr.name="type"');
+      expect(text).toContain('attr.name="rack unit"');
+      expect(text).toContain('topox:scope="group"');
+      expect(text).toContain('<graph id="topox_group_6463_graph"');
+      expect(text).toContain('directed="false"');
+      expect(text).toContain('attr.name="x"');
+    });
+
+    it("round-trips custom data and safely skips malformed or namespaced extensions", () => {
+      const { doc: back, warnings } = parseGraphML(toGraphML(sampleDoc()));
+      expect(warnings).toEqual([]);
+      expect(back.graph.id).toBe("net-1");
+      expect(back.graph.nodes.find((node) => node.id === "srv")).toMatchObject({
+        label: "App Server",
+        type: "net-server",
+        icon: "server",
+        ref: "res-42",
+        attrs: { "rack unit": "A3" },
+      });
+      expect(back.graph.groups.find((group) => group.id === "dc")?.children).toEqual(
+        expect.arrayContaining(["sw", "srv", "db", "inner"]),
+      );
+      expect(back.graph.edges.find((edge) => edge.id === "e3")?.directed).not.toBe(true);
+      expect(back.views[0]?.layout.fw).toEqual({ x: 0, y: 0, width: 160, height: 48 });
+
+      const tolerant = parseGraphML(`<?xml version="1.0"?>
+  <graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:y="http://www.yworks.com/xml/graphml">
+    <key id="label" for="node" attr.name="label" attr.type="string"/>
+    <key id="vendor" for="node" attr.name="vendor" attr.type="string"/>
+    <key id="yfiles" for="node" yfiles.type="nodegraphics"/>
+    <graph id="G" edgedefault="directed">
+      <node id="a">
+        <data key="label">Router A</data>
+        <data key="vendor">MikroTik</data>
+        <data key="yfiles"><y:ShapeNode/></data>
+      </node>
+      <node/>
+      <node id="b"/>
+      <edge id="e1" source="a" target="b"/>
+      <edge id="broken" source="a" target="missing"/>
+    </graph>
+  </graphml>`);
+      expect(tolerant.doc.graph.nodes.find((node) => node.id === "a")).toEqual({
+        id: "a",
+        type: "default",
+        label: "Router A",
+        attrs: { vendor: "MikroTik" },
+      });
+      expect(tolerant.doc.graph.edges).toHaveLength(1);
+      expect(tolerant.warnings).toHaveLength(2);
+      expect(() => parseGraphML("<graphml><graph>")).toThrow(/XML|GraphML/i);
+    });
+
+    it("uses schema-safe XML ids while preserving arbitrary TopoX ids", () => {
+      const doc = emptyDoc("graph / α");
+      doc.graph.nodes = [{ id: "router / α", type: "device", label: "Router" }];
+
+      const text = toGraphML(doc);
+      expect(text).not.toMatch(/\sid="[^"]*%/);
+      const back = parseGraphML(text).doc;
+      expect(back.graph.id).toBe("graph / α");
+      expect(back.graph.nodes[0]?.id).toBe("router / α");
+    });
+});
+
+describe("mermaid import groups and warnings", () => {
   it("assigns nodes to the innermost subgraph and nests groups", () => {
     const { doc } = parseMermaid(`
 flowchart TD

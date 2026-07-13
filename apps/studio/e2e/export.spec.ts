@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
-import { docFromYaml, parseMermaid } from "@topox/interop";
+import { docFromYaml, parseDot, parseGraphML, parseMermaid } from "@topox/interop";
 import { waitForCanvas } from "./helpers";
 
 async function exportFromMenu(page: Page, itemName: string): Promise<{ filename: string; body: string }> {
@@ -14,7 +14,7 @@ async function exportFromMenu(page: Page, itemName: string): Promise<{ filename:
   };
 }
 
-test("File menu downloads parseable JSON, YAML, Mermaid, and CSV exports", async ({ page }) => {
+test("File menu downloads parseable document and projection formats", async ({ page }) => {
   await page.goto("/");
   await waitForCanvas(page);
 
@@ -38,6 +38,22 @@ test("File menu downloads parseable JSON, YAML, Mermaid, and CSV exports", async
   expect(parsedMermaid.doc.graph.nodes).toHaveLength(8);
   expect(parsedMermaid.doc.graph.edges).toHaveLength(7);
   expect(parsedMermaid.doc.graph.groups).toHaveLength(2);
+
+  const dot = await exportFromMenu(page, "Export DOT");
+  expect(dot.filename).toBe("demo.dot");
+  const parsedDot = parseDot(dot.body);
+  expect(parsedDot.warnings).toEqual([]);
+  expect(parsedDot.doc.graph.nodes).toHaveLength(8);
+  expect(parsedDot.doc.graph.edges).toHaveLength(7);
+  expect(parsedDot.doc.graph.groups).toHaveLength(2);
+
+  const graphml = await exportFromMenu(page, "Export GraphML");
+  expect(graphml.filename).toBe("demo.graphml");
+  const parsedGraphML = parseGraphML(graphml.body);
+  expect(parsedGraphML.warnings).toEqual([]);
+  expect(parsedGraphML.doc.graph.nodes).toHaveLength(8);
+  expect(parsedGraphML.doc.graph.edges).toHaveLength(7);
+  expect(parsedGraphML.doc.graph.groups).toHaveLength(2);
 
   const csv = await exportFromMenu(page, "Export CSV inventory");
   expect(csv.filename).toBe("demo.inventory.csv");
