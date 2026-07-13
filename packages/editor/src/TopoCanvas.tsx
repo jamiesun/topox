@@ -1,12 +1,16 @@
-import { useCallback, useMemo } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
+  applyEdgeChanges,
+  applyNodeChanges,
   Background,
   Controls,
   MiniMap,
   ReactFlow,
   type Connection,
   type Edge as RFEdge,
+  type EdgeChange,
   type Node as RFNode,
+  type NodeChange,
   type NodeProps,
 } from "@xyflow/react";
 import type { GraphDiff, NodeStatus, ResolvedRuntime, TopoDoc } from "@topox/core";
@@ -46,7 +50,7 @@ const typePalette: Record<string, string> = {
   "net-terminal": "#334155",
 };
 
-function TopoNode({ data, selected }: NodeProps<TopoRFNode>) {
+const TopoNode = memo(function TopoNode({ data, selected }: NodeProps<TopoRFNode>) {
   const d = data as TopoNodeData;
   const accent = typePalette[d.nodeType] ?? "#475569";
   const statusColor = d.status !== undefined ? statusPalette[d.status] : undefined;
@@ -98,7 +102,7 @@ function TopoNode({ data, selected }: NodeProps<TopoRFNode>) {
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0.4 }} />
     </div>
   );
-}
+});
 
 const nodeTypes = { topo: TopoNode };
 
@@ -114,24 +118,78 @@ function nextEdgeId(existing: Set<string>): string {
  * It renders the given View's layout and translates canvas gestures into GraphDiffs.
  */
 export function TopoCanvas({ doc, viewId, onDiff, onSelect, readOnly = false, runtime }: TopoCanvasProps) {
-  const { nodes, edges } = useMemo(() => toFlow(doc, viewId, runtime), [doc, viewId, runtime]);
   const view = doc.views.find((v) => v.id === viewId) ?? doc.views[0];
 
-  const handleNodeDragStop = useCallback(
-    (_event: unknown, node: RFNode) => {
-      if (readOnly || !view) return;
-      const before = view.layout[node.id];
-      const next = {
-        x: Math.round(node.position.x),
-        y: Math.round(node.position.y),
-        ...(before?.width !== undefined ? { width: before.width } : {}),
-        ...(before?.height !== undefined ? { height: before.height } : {}),
+  // React Flow's controlled-flow pattern: the canvas owns transient interaction
+  // state (drag positions, selection) locally so dragging stays at 60fps; the
+  // document is only touched once, as a diff, when the gesture ends.
+  const [flow, setFlow] = useState(() => toFlow(doc, viewId, runtime));
+  const mounted = useRef(false);
+
+  useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true;
+      return; // initial state already computed
+    }
+    const fresh = toFlow(doc, viewId, runtime);
+    setFlow((prev) => {
+      const prevNodes = new Map(prev.nodes.map((n) => [n.id, n]));
+      const prevEdges = new Map(prev.edges.map((e) => [e.id, e]));
+      return {
+        // Preserve in-flight drag positions and selection across doc/runtime
+        // refreshes (e.g. simulator ticks) so gestures are never interrupted.
+        nodes: fresh.nodes.map((n) => {
+          const p = prevNodes.get(n.id);
+          if (!p) return n;
+          const merged: TopoRFNode = { ...n, selected: p.selected ?? false };
+          if (p.dragging === true) {
+            merged.position = p.position;
+            merged.dragging = true;
+          }
+          return merged;
+        }),
+        edges: fresh.edges.map((e) => {
+          const p = prevEdges.get(e.id);
+          return p ? { ...e, selected: p.selected ?? false } : e;
+        }),
       };
-      if (before && before.x === next.x && before.y === next.y) return;
+    });
+  }, [doc, viewId, runtime]);
+
+  const handleNodesChange = useCallback((changes: NodeChange<TopoRFNode>[]) => {
+    // Removals go through the diff pipeline (onDelete), never the local state,
+    // so the document stays the single source of truth.
+    const safe = changes.filter((c) => c.type !== "remove");
+    if (safe.length === 0) return;
+    setFlow((prev) => ({ ...prev, nodes: applyNodeChanges(safe, prev.nodes) }));
+  }, []);
+
+  const handleEdgesChange = useCallback((changes: EdgeChange<RFEdge>[]) => {
+    const safe = changes.filter((c) => c.type !== "remove");
+    if (safe.length === 0) return;
+    setFlow((prev) => ({ ...prev, edges: applyEdgeChanges(safe, prev.edges) }));
+  }, []);
+
+  const handleNodeDragStop = useCallback(
+    (_event: unknown, _node: RFNode, dragged: RFNode[]) => {
+      if (readOnly || !view) return;
+      const ops = [];
+      for (const node of dragged) {
+        const before = view.layout[node.id];
+        const next = {
+          x: Math.round(node.position.x),
+          y: Math.round(node.position.y),
+          ...(before?.width !== undefined ? { width: before.width } : {}),
+          ...(before?.height !== undefined ? { height: before.height } : {}),
+        };
+        if (before && before.x === next.x && before.y === next.y) continue;
+        ops.push(makeSetLayout(view, node.id, next));
+      }
+      if (ops.length === 0) return;
       onDiff({
         origin: "user",
-        summary: `move ${node.id}`,
-        ops: [makeSetLayout(view, node.id, next)],
+        summary: ops.length === 1 ? `move ${dragged[0]?.id ?? "node"}` : `move ${ops.length} nodes`,
+        ops,
       });
     },
     [onDiff, readOnly, view],
@@ -193,9 +251,11 @@ export function TopoCanvas({ doc, viewId, onDiff, onSelect, readOnly = false, ru
 
   return (
     <ReactFlow
-      nodes={nodes}
-      edges={edges}
+      nodes={flow.nodes}
+      edges={flow.edges}
       nodeTypes={nodeTypes}
+      onNodesChange={handleNodesChange}
+      onEdgesChange={handleEdgesChange}
       onNodeDragStop={handleNodeDragStop}
       onConnect={handleConnect}
       onDelete={handleDelete}

@@ -132,6 +132,12 @@ export function App() {
     }
   }, []);
 
+  const handleSelect = useCallback((nodeIds: string[]) => {
+    setSelection((prev) =>
+      prev.length === nodeIds.length && prev.every((v, i) => v === nodeIds[i]) ? prev : nodeIds,
+    );
+  }, []);
+
   const issues = useMemo(() => validateDoc(doc), [doc]);
 
   // Live overlay: simulator ticks feed the same event pipeline a real
@@ -308,7 +314,7 @@ export function App() {
               doc={previewDoc ?? doc}
               viewId={viewId}
               onDiff={pushDiff}
-              onSelect={(n) => setSelection(n)}
+              onSelect={handleSelect}
               readOnly={previewDoc !== null}
               {...(resolvedRuntime !== undefined ? { runtime: resolvedRuntime } : {})}
             />
