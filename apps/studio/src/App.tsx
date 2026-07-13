@@ -10,6 +10,7 @@ import {
 } from "@topox/core";
 import { compileDsl } from "@topox/dsl";
 import { autoLayoutDiff, TopoCanvas } from "@topox/editor";
+import { docFromYaml, docToYaml, parseMermaid, toMermaid } from "@topox/interop";
 import { AiPanel } from "./AiPanel.js";
 import { demoDoc } from "./demo.js";
 
@@ -89,25 +90,37 @@ export function App() {
     [history, pushDiff, viewId],
   );
 
-  const importJson = useCallback((raw: string) => {
+  const importFile = useCallback((name: string, raw: string) => {
     try {
-      const parsed: unknown = JSON.parse(raw);
-      if (
-        parsed === null ||
-        typeof parsed !== "object" ||
-        !("graph" in parsed) ||
-        !("views" in parsed)
-      ) {
-        throw new Error("expected a TopoDoc: { graph, views }");
+      const ext = name.toLowerCase().split(".").pop() ?? "";
+      let imported: TopoDoc;
+      let notice: string | null = null;
+      if (ext === "mmd" || ext === "mermaid") {
+        const { doc: parsed, warnings } = parseMermaid(raw);
+        // Mermaid carries no geometry; give the fresh doc a usable layout.
+        imported = applyDiff(parsed, autoLayoutDiff(parsed, parsed.views[0]?.id ?? "default"));
+        if (warnings.length > 0) notice = `imported with warnings: ${warnings.join("; ")}`;
+      } else if (ext === "yaml" || ext === "yml") {
+        imported = docFromYaml(raw);
+      } else {
+        const parsed: unknown = JSON.parse(raw);
+        if (
+          parsed === null ||
+          typeof parsed !== "object" ||
+          !("graph" in parsed) ||
+          !("views" in parsed)
+        ) {
+          throw new Error("expected a TopoDoc: { graph, views }");
+        }
+        imported = parsed as TopoDoc;
       }
-      const imported = parsed as TopoDoc;
       const problems = validateDoc(imported).filter((i) => i.severity === "error");
       if (problems.length > 0) {
         throw new Error(problems.map((p) => p.message).join("; "));
       }
       historyRef.current = new History(imported);
       setDoc(imported);
-      setError(null);
+      setError(notice);
     } catch (e) {
       setError(`import failed: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -142,23 +155,31 @@ export function App() {
     [doc.graph.nodes, selection],
   );
 
-  const exportJson = useCallback(() => {
-    const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
+  const download = useCallback((filename: string, content: string, mime: string) => {
+    const blob = new Blob([content], { type: mime });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `${doc.graph.id}.topox.json`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(a.href);
-  }, [doc]);
+  }, []);
 
-  const exportCsv = useCallback(() => {
-    const blob = new Blob([inventoryToCsv(inventory)], { type: "text/csv" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `${doc.graph.id}.inventory.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }, [doc.graph.id, inventory]);
+  const exportJson = useCallback(
+    () => download(`${doc.graph.id}.topox.json`, JSON.stringify(doc, null, 2), "application/json"),
+    [doc, download],
+  );
+  const exportYaml = useCallback(
+    () => download(`${doc.graph.id}.topox.yaml`, docToYaml(doc), "text/yaml"),
+    [doc, download],
+  );
+  const exportMermaid = useCallback(
+    () => download(`${doc.graph.id}.mmd`, toMermaid(doc), "text/plain"),
+    [doc, download],
+  );
+  const exportCsv = useCallback(
+    () => download(`${doc.graph.id}.inventory.csv`, inventoryToCsv(inventory), "text/csv"),
+    [doc.graph.id, download, inventory],
+  );
 
   return (
     <div style={styles.root}>
@@ -171,18 +192,20 @@ export function App() {
         <button style={styles.btn} onClick={undo} disabled={!history.canUndo}>Undo</button>
         <button style={styles.btn} onClick={redo} disabled={!history.canRedo}>Redo</button>
         <button style={styles.btn} onClick={autoLayout}>Auto layout</button>
-        <button style={styles.btn} onClick={() => fileInputRef.current?.click()}>Import JSON</button>
-        <button style={styles.btn} onClick={exportJson}>Export JSON</button>
-        <button style={styles.btn} onClick={exportCsv}>Export CSV</button>
+        <button style={styles.btn} onClick={() => fileInputRef.current?.click()}>Import</button>
+        <button style={styles.btn} onClick={exportJson}>JSON</button>
+        <button style={styles.btn} onClick={exportYaml}>YAML</button>
+        <button style={styles.btn} onClick={exportMermaid}>Mermaid</button>
+        <button style={styles.btn} onClick={exportCsv}>CSV</button>
         <input
           ref={fileInputRef}
           type="file"
-          accept=".json"
+          accept=".json,.yaml,.yml,.mmd,.mermaid"
           style={{ display: "none" }}
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (!file) return;
-            void file.text().then((raw) => importJson(raw));
+            void file.text().then((raw) => importFile(file.name, raw));
             e.target.value = "";
           }}
         />

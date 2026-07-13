@@ -17,8 +17,10 @@ Not a drawing app. Not a whiteboard. Not a flowchart tool.
 | Package | Purpose |
 | --- | --- |
 | `@topox/core` | Kernel: `Graph`/`Node`/`Edge`/`Group`/`View` model, validation, diff engine (`applyDiff`/`invertDiff`), `History`, inventory projection. Zero runtime dependencies. |
+| `@topox/dsl` | Line-oriented topology DSL compiled to `GraphDiff` (the AI output format), plus `docToDsl` serialization and an LLM prompt guide. |
 | `@topox/editor` | React Flow canvas. A controlled view: doc in, diffs out. Includes dagre auto-layout emitted as a diff. |
-| `apps/studio` | Demo app: Canvas / Inventory / JSON views, JSON import/export, CSV export, diff history with undo/redo. Builds to static assets embeddable in a Go binary. |
+| `@topox/interop` | YAML (full fidelity) and Mermaid flowchart (export + tolerant import) interchange. |
+| `apps/studio` | Demo app: Canvas / Inventory / JSON views, JSON/YAML/Mermaid import & export, CSV export, AI panel (Prompt → DSL → Diff → Preview → Apply), diff history with undo/redo. Builds to static assets embeddable in a Go binary. |
 
 ## Core objects
 
