@@ -34,7 +34,8 @@ export interface Node {
   icon?: string;
   tags?: string[];
   /**
-   * Binding to an external business resource (generalizes teams* `resid`).
+   * Binding to an external business resource (e.g. a device or service id
+   * in an inventory system).
    * Runtime state producers address nodes through this, never through layout.
    */
   ref?: string;
@@ -137,7 +138,7 @@ export type DiffOp =
  * system as a GraphDiff. Apply it, preview it, invert it, audit it.
  */
 export interface GraphDiff {
-  /** Optional provenance: "user", "ai", "import:webix", ... */
+  /** Optional provenance: "user", "ai", "import:yaml", ... */
   origin?: string;
   /** Human-readable summary, e.g. for history panels and audit logs. */
   summary?: string;

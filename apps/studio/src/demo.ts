@@ -1,7 +1,7 @@
 import type { TopoDoc } from "@topox/core";
 import { applyDiff, emptyDoc } from "@topox/core";
 
-/** Demo topology resembling a teamsedge deployment. */
+/** Demo topology: a small ISP edge deployment. */
 export function demoDoc(): TopoDoc {
   const doc = emptyDoc("demo", "Edge Deployment");
   return applyDiff(doc, {
@@ -12,7 +12,7 @@ export function demoDoc(): TopoDoc {
       { op: "add_node", node: { id: "fw", type: "net-firewall", label: "Firewall", tags: ["hq"] } },
       { op: "add_node", node: { id: "r1", type: "net-mikrotik", label: "MikroTik HQ", ref: "ros:hq-01", tags: ["hq"] } },
       { op: "add_node", node: { id: "sw1", type: "net-switch", label: "Core Switch", tags: ["hq"] } },
-      { op: "add_node", node: { id: "acs", type: "net-server", label: "TeamsACS", ref: "svc:teamsacs", description: "RADIUS + TR-069" } },
+      { op: "add_node", node: { id: "acs", type: "net-server", label: "ACS Server", ref: "svc:acs", description: "RADIUS + TR-069" } },
       { op: "add_node", node: { id: "db", type: "net-database", label: "PostgreSQL", ref: "svc:pgsql" } },
       { op: "add_node", node: { id: "cpe1", type: "net-cpe", label: "CPE Site A", ref: "cpe:site-a" } },
       { op: "add_node", node: { id: "cpe2", type: "net-cpe", label: "CPE Site B", ref: "cpe:site-b" } },
