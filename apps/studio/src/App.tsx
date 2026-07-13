@@ -382,29 +382,41 @@ export function App() {
         <button style={styles.tab(tab === "inventory")} onClick={() => setTab("inventory")}>Inventory</button>
         <button style={styles.tab(tab === "json")} onClick={() => setTab("json")}>JSON</button>
         <span style={{ width: 12 }} />
-        <button style={styles.btn} onClick={undo} disabled={!history.canUndo}>Undo</button>
-        <button style={styles.btn} onClick={redo} disabled={!history.canRedo}>Redo</button>
-        <button style={styles.btn} onClick={autoLayout}>Auto layout</button>
-        <button style={styles.btn} onClick={groupSelected} disabled={selection.length < 2} title="Group selected nodes">
-          Group
-        </button>
-        <button style={styles.btn} onClick={ungroupSelected} disabled={!selectedGroup} title="Dissolve selected group">
-          Ungroup
-        </button>
-        <button style={styles.btn} onClick={() => fileInputRef.current?.click()}>Import</button>
+        <button style={styles.btn} onClick={undo} disabled={!history.canUndo} title="Undo">↩</button>
+        <button style={styles.btn} onClick={redo} disabled={!history.canRedo} title="Redo">↪</button>
         <Dropdown
-          label="Export"
+          label="File"
           buttonStyle={styles.btn}
           items={[
-            { label: "JSON", hint: ".topox.json", onSelect: exportJson },
-            { label: "YAML", hint: ".topox.yaml", onSelect: exportYaml },
-            { label: "Mermaid", hint: ".mmd", onSelect: exportMermaid },
-            { label: "CSV inventory", hint: ".csv", onSelect: exportCsv },
+            { label: "Import…", hint: "json / yaml / mmd", onSelect: () => fileInputRef.current?.click() },
+            { label: "Export JSON", hint: ".topox.json", onSelect: exportJson },
+            { label: "Export YAML", hint: ".topox.yaml", onSelect: exportYaml },
+            { label: "Export Mermaid", hint: ".mmd", onSelect: exportMermaid },
+            { label: "Export CSV inventory", hint: ".csv", onSelect: exportCsv },
           ]}
         />
+        <Dropdown
+          label="Arrange"
+          buttonStyle={styles.btn}
+          items={[
+            { label: "Auto layout", hint: "dagre TB", onSelect: autoLayout },
+            {
+              label: "Group selection",
+              hint: "2+ nodes",
+              disabled: selection.length < 2,
+              onSelect: groupSelected,
+            },
+            {
+              label: "Ungroup",
+              hint: "dissolve",
+              disabled: !selectedGroup,
+              onSelect: ungroupSelected,
+            },
+          ]}
+        />
+        <span style={{ marginLeft: "auto" }} />
         {docSource ? (
           <>
-            <span style={{ width: 12 }} />
             <button
               style={{ ...styles.btn, ...(dirty ? { borderColor: "#2563eb", color: "#2563eb" } : {}) }}
               onClick={saveRemote}
@@ -427,7 +439,6 @@ export function App() {
             ) : null}
           </>
         ) : null}
-        <span style={{ width: 12 }} />
         <button style={styles.tab(simulating)} onClick={toggleSimulate}>
           {simulating ? "◉ Live" : "Simulate"}
         </button>

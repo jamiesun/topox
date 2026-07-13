@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 export interface DropdownItem {
   label: string;
   hint?: string;
+  disabled?: boolean;
   onSelect: () => void;
 }
 
@@ -83,10 +84,17 @@ export function Dropdown({
             <button
               key={item.label}
               role="menuitem"
-              style={menuStyles.item}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#f1f5f9")}
+              disabled={item.disabled ?? false}
+              style={{
+                ...menuStyles.item,
+                ...(item.disabled ? { color: "#cbd5e1", cursor: "default" } : {}),
+              }}
+              onMouseEnter={(e) => {
+                if (!item.disabled) e.currentTarget.style.background = "#f1f5f9";
+              }}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
               onClick={() => {
+                if (item.disabled) return;
                 setOpen(false);
                 item.onSelect();
               }}
