@@ -92,6 +92,14 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 
   按名称/标签/类型/属性过滤节点。证据：`packages/core/src/inventory.ts`（`searchNodes`），core.test.ts 中含字段匹配断言。
 
+- **SSE 运行态接入客户端**
+
+  `connectRuntimeSSE(url)`：订阅 SSE 流（每条 `data:` 行一个 RuntimeEvent JSON），折叠为 RuntimeState；断线重连交给平台 EventSource，传输可注入以便测试。证据：`packages/core/src/sse.ts`，`packages/core/tests/sse.test.ts`。
+
+- **框架无关嵌入包（@topox/embed）**
+
+  `mountTopoView(el, options)` 把画布挂进任意 DOM 元素，宿主无需 React：React/React Flow/CSS 打进产物（ESM + IIFE standalone 双产物）。句柄提供 getDoc/applyDiff/undo/redo/autoLayout/setReadOnly/pushRuntimeEvent/connectSSE/destroy。证据：`packages/embed/src/`，纯 HTML 宿主示例 `examples/embed-plain/`（含演示 SSE 服务器），指南 `docs/embedding.md`。
+
 ## 非目标（铁律）
 
 除非用户明确修改边界，以下规则不可越过，也不得转写为"以后会做"：
@@ -110,7 +118,7 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 
 - **真实运行态接入（完成 Phase 2）**
 
-  当前运行态由内置模拟器驱动。目标是定义一个稳定的事件接入契约（如 SSE/WebSocket 上的 RuntimeEvent 流），让生产系统能按 `Node.ref` 推送状态与指标。服务于"运行态让拓扑活起来"的画像；契约必须保持"Runtime 不进文档"的铁律。
+  事件接入契约已定义并有客户端实现：SSE 流上每条消息是一个 RuntimeEvent（snapshot/node/edge），按 `Node.ref` 匹配（见 `docs/embedding.md` 协议节）。剩余目标：让真实生产系统按此契约推送状态与指标，并在真实负载下校准；契约必须保持"Runtime 不进文档"的铁律。WebSocket 可作为第二传输，复用同一事件模型。
 
 - **Trace 与 Snapshot**
 
@@ -167,6 +175,8 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 | Inspector 属性编辑（基础/attrs/JSON） | 中 | ❌ 缺口（studio 组件无测试） | 待核验（JSON 编辑的 id 不变/端点校验在 `apps/studio/src/Inspector.tsx`，无测试） | 不适用 | ✅ 编辑走 update diff，可 undo | 内核层 `core.test.ts` makeNodeUpdate；UI 层无 |
 | 搜索（名称/标签/类型/属性） | 低 | ❌ 缺口（无 UI 级） | 不适用（只读过滤） | 不适用 | 不适用（只读） | `packages/core/tests/core.test.ts` searchNodes 断言 |
 | 自动布局（dagre） | 中 | ❌ 缺口（无 UI 级 E2E） | 待核验 | 不适用 | ✅ 布局以 diff 产出，可 undo | `packages/editor/tests/editor.test.ts` autoLayoutDiff（含幂等性） |
+| SSE 运行态接入（connectRuntimeSSE） | 中 | ✅ 单测覆盖 snapshot→patch 折叠（浏览器级 E2E 缺口） | ✅ 畸形消息 onError 后继续流 | 不适用 | ✅ 叠加层可整体清除；close 幂等 | `packages/core/tests/sse.test.ts` |
+| 嵌入挂载（mountTopoView） | 中 | ❌ 缺口（示例页手工验证，浏览器 E2E 待补） | 待核验 | 不适用 | ✅ 编辑走同一 diff/undo 管线 | `examples/embed-plain/`（手工冒烟）；UI 级无 |
 
 缺口的最低期望：
 

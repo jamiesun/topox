@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>TopoX embed — plain HTML host</title>
+    <style>
+      body { margin: 0; font: 14px system-ui, sans-serif; background: #f8fafc; }
+      header { display: flex; gap: 8px; align-items: center; padding: 10px 16px; background: #fff; border-bottom: 1px solid #e2e8f0; }
+      header b { margin-right: auto; }
+      button { padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; }
+      button:hover { background: #f1f5f9; }
+      #status { font-size: 12px; color: #64748b; }
+      #canvas { height: calc(100vh - 53px); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <b>TopoX embed demo — no framework on this page</b>
+      <span id="status">sse: idle</span>
+      <button id="edit">enable editing</button>
+      <button id="layout">auto layout</button>
+      <button id="undo">undo</button>
+      <button id="sse">connect SSE</button>
+    </header>
+    <div id="canvas"></div>
+
+    <!-- One script tag. React, React Flow and CSS are inside. -->
+    <script src="/topox-embed.standalone.js"></script>
+    <script>
+      const doc = {
+        graph: {
+          schemaVersion: 1,
+          id: "edge-pop",
+          meta: { name: "Edge POP" },
+          nodes: [
+            { id: "wan", type: "net-cloud", label: "Upstream" },
+            { id: "fw", type: "net-firewall", label: "Firewall", ref: "dev:fw-01" },
+            { id: "core", type: "net-router", label: "Core Router", ref: "dev:core-01" },
+            { id: "sw", type: "net-switch", label: "Access Switch", ref: "dev:sw-01" },
+            { id: "acs", type: "net-server", label: "ACS Server", ref: "svc:acs" },
+            { id: "cpe1", type: "net-cpe", label: "CPE 1001", ref: "cpe:1001" },
+            { id: "cpe2", type: "net-cpe", label: "CPE 1002", ref: "cpe:1002" },
+          ],
+          edges: [
+            { id: "e1", source: "wan", target: "fw", directed: true },
+            { id: "e2", source: "fw", target: "core", directed: true },
+            { id: "e3", source: "core", target: "sw", directed: true },
+            { id: "e4", source: "core", target: "acs", directed: true },
+            { id: "e5", source: "sw", target: "cpe1", directed: true },
+            { id: "e6", source: "sw", target: "cpe2", directed: true },
+          ],
+          groups: [],
+        },
+        views: [{ id: "main", name: "Main", layout: {} }],
+      };
+
+      const view = TopoX.mountTopoView(document.getElementById("canvas"), {
+        doc,
+        readOnly: true,
+        onDiff: (diff) => console.log("diff:", diff.summary),
+        onSelect: (sel) => console.log("selected:", sel),
+        onRuntimeStatus: (s) => (document.getElementById("status").textContent = "sse: " + s),
+      });
+      view.autoLayout({ direction: "TB" });
+
+      let editing = false;
+      document.getElementById("edit").onclick = (e) => {
+        editing = !editing;
+        view.setReadOnly(!editing);
+        e.target.textContent = editing ? "lock (read-only)" : "enable editing";
+      };
+      document.getElementById("layout").onclick = () => view.autoLayout({ direction: "LR" });
+      document.getElementById("undo").onclick = () => view.undo();
+      document.getElementById("sse").onclick = () => view.connectSSE("/stream");
+    </script>
+  </body>
+</html>
