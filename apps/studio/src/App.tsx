@@ -1,16 +1,20 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { GraphDiff, TopoDoc } from "@topox/core";
 import {
+  applyDiff,
   History,
   inventoryToCsv,
   searchNodes,
   toInventory,
   validateDoc,
 } from "@topox/core";
+import { compileDsl } from "@topox/dsl";
 import { autoLayoutDiff, TopoCanvas } from "@topox/editor";
+import { AiPanel } from "./AiPanel.js";
 import { demoDoc } from "./demo.js";
 
 type Tab = "canvas" | "inventory" | "json";
+type SideTab = "inspect" | "ai";
 
 const styles = {
   root: {
@@ -56,6 +60,8 @@ export function App() {
   const historyRef = useRef(new History(demoDoc()));
   const [doc, setDoc] = useState<TopoDoc>(historyRef.current.doc);
   const [tab, setTab] = useState<Tab>("canvas");
+  const [sideTab, setSideTab] = useState<SideTab>("inspect");
+  const [dsl, setDsl] = useState("");
   const [query, setQuery] = useState("");
   const [selection, setSelection] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -108,6 +114,26 @@ export function App() {
   }, []);
 
   const issues = useMemo(() => validateDoc(doc), [doc]);
+
+  // AI/DSL pipeline: DSL text compiles live into a staged diff; the canvas
+  // previews the result read-only until the user applies or discards.
+  const compiled = useMemo(() => (dsl.trim() === "" ? null : compileDsl(dsl, doc)), [dsl, doc]);
+  const previewDoc = useMemo(() => {
+    if (!compiled || compiled.diff.ops.length === 0) return null;
+    try {
+      return applyDiff(doc, compiled.diff);
+    } catch {
+      return null;
+    }
+  }, [compiled, doc]);
+
+  const applyStaged = useCallback(() => {
+    if (!compiled || compiled.diff.ops.length === 0) return;
+    pushDiff({ ...compiled.diff, origin: "ai/dsl" });
+    setDsl("");
+  }, [compiled, pushDiff]);
+
+  const discardStaged = useCallback(() => setDsl(""), []);
   const inventory = useMemo(() => toInventory(doc.graph), [doc.graph]);
   const matches = useMemo(() => searchNodes(doc.graph, query), [doc.graph, query]);
   const matchedIds = useMemo(() => new Set(matches.map((n) => n.id)), [matches]);
@@ -182,9 +208,40 @@ export function App() {
       ) : null}
 
       <div style={styles.main}>
-        <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
+        <div style={{ flex: 1, minWidth: 0, position: "relative", display: "flex", flexDirection: "column" }}>
+          {previewDoc && tab === "canvas" ? (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "6px 14px",
+                background: "#fffbeb",
+                borderBottom: "1px solid #fde68a",
+                fontSize: 12.5,
+              }}
+            >
+              <span style={{ fontWeight: 600, color: "#92400e" }}>
+                Preview · {compiled?.diff.ops.length} op(s) staged — nothing applied yet
+              </span>
+              <button
+                style={{ ...styles.btn, background: "#16a34a", color: "#fff", borderColor: "#16a34a" }}
+                onClick={applyStaged}
+              >
+                Apply
+              </button>
+              <button style={styles.btn} onClick={discardStaged}>Discard</button>
+            </div>
+          ) : null}
+          <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
           {tab === "canvas" ? (
-            <TopoCanvas doc={doc} viewId={viewId} onDiff={pushDiff} onSelect={(n) => setSelection(n)} />
+            <TopoCanvas
+              doc={previewDoc ?? doc}
+              viewId={viewId}
+              onDiff={pushDiff}
+              onSelect={(n) => setSelection(n)}
+              readOnly={previewDoc !== null}
+            />
           ) : tab === "inventory" ? (
             <div style={{ overflow: "auto", height: "100%", padding: 16 }}>
               <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}>
@@ -218,9 +275,18 @@ export function App() {
               {JSON.stringify(doc, null, 2)}
             </pre>
           )}
+          </div>
         </div>
 
         <div style={styles.side}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+            <button style={styles.tab(sideTab === "inspect")} onClick={() => setSideTab("inspect")}>Inspector</button>
+            <button style={styles.tab(sideTab === "ai")} onClick={() => setSideTab("ai")}>AI</button>
+          </div>
+          {sideTab === "ai" ? (
+            <AiPanel doc={doc} dsl={dsl} onDslChange={setDsl} compiled={compiled} />
+          ) : (
+          <>
           <section>
             <h3 style={{ margin: "2px 0 8px", fontSize: 13 }}>Inspector</h3>
             {selectedNode ? (
@@ -278,6 +344,8 @@ export function App() {
             {doc.graph.nodes.length} nodes · {doc.graph.edges.length} edges · {doc.graph.groups.length} groups
             {query ? ` · ${matches.length} match(es)` : ""}
           </section>
+          </>
+          )}
         </div>
       </div>
     </div>

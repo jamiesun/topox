@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@topox/core": "*",
+    "@topox/dsl": "*",
     "@topox/editor": "*",
     "@xyflow/react": "^12.4.0",
     "react": "^19.0.0",
