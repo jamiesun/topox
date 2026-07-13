@@ -1,4 +1,9 @@
-import { applyRuntimeEvent, emptyRuntime, type RuntimeEvent, type RuntimeState } from "./runtime.js";
+import {
+  createRuntimeEventConsumer,
+  type RuntimeConnectionStatus,
+  type RuntimeEventStreamOptions,
+} from "./runtime-stream.js";
+import type { RuntimeState } from "./runtime.js";
 
 /**
  * Wire protocol: each SSE `data:` line is one JSON-encoded RuntimeEvent —
@@ -7,7 +12,7 @@ import { applyRuntimeEvent, emptyRuntime, type RuntimeEvent, type RuntimeState }
  * Reconnection is delegated to the platform EventSource.
  */
 
-export type RuntimeSSEStatus = "connecting" | "open" | "retrying" | "closed";
+export type RuntimeSSEStatus = RuntimeConnectionStatus;
 
 /** Minimal EventSource surface so tests and non-browser hosts can inject one. */
 export interface EventSourceLike {
@@ -17,16 +22,8 @@ export interface EventSourceLike {
   close(): void;
 }
 
-export interface RuntimeSSEOptions {
-  /** Starting state; defaults to emptyRuntime(). */
-  initial?: RuntimeState;
-  /** Fires for every parsed event, before it merges into state. */
-  onEvent?: (event: RuntimeEvent) => void;
-  /** Fires with the accumulated state after each merge. */
-  onState?: (state: RuntimeState) => void;
+export interface RuntimeSSEOptions extends RuntimeEventStreamOptions {
   onStatus?: (status: RuntimeSSEStatus) => void;
-  /** Malformed messages land here; the stream keeps going. */
-  onError?: (error: unknown, raw?: string) => void;
   /** Injectable transport (tests, auth wrappers, polyfills). */
   eventSourceFactory?: (url: string) => EventSourceLike;
 }
@@ -56,7 +53,7 @@ export function connectRuntimeSSE(
   options: RuntimeSSEOptions = {},
 ): RuntimeSSEHandle {
   const factory = options.eventSourceFactory ?? defaultFactory;
-  let state = options.initial ?? emptyRuntime();
+  const consumer = createRuntimeEventConsumer(options);
   let status: RuntimeSSEStatus = "connecting";
   let closed = false;
 
@@ -71,24 +68,12 @@ export function connectRuntimeSSE(
   source.onerror = () => setStatus("retrying");
   source.onmessage = (ev) => {
     if (closed) return;
-    let event: RuntimeEvent;
-    try {
-      event = JSON.parse(ev.data) as RuntimeEvent;
-      if (event.kind !== "snapshot" && event.kind !== "node" && event.kind !== "edge") {
-        throw new Error(`unknown runtime event kind: ${String((event as { kind?: unknown }).kind)}`);
-      }
-    } catch (error) {
-      options.onError?.(error, ev.data);
-      return;
-    }
-    options.onEvent?.(event);
-    state = applyRuntimeEvent(state, event);
-    options.onState?.(state);
+    consumer.receive(ev.data);
   };
 
   return {
     get state() {
-      return state;
+      return consumer.state;
     },
     get status() {
       return status;

@@ -1,6 +1,7 @@
 // Zero-dependency demo host: serves the plain-HTML page, the standalone
-// bundle, and a `/stream` SSE endpoint emitting RuntimeEvent JSON.
+// bundle, and SSE/WebSocket endpoints emitting the same RuntimeEvent JSON.
 //   node examples/embed-plain/serve.mjs   →  http://localhost:8090
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -35,7 +36,26 @@ function tickEvent() {
   };
 }
 
-createServer(async (req, res) => {
+function webSocketTextFrame(text) {
+  const payload = Buffer.from(text);
+  let header;
+  if (payload.length < 126) {
+    header = Buffer.from([0x81, payload.length]);
+  } else if (payload.length <= 0xffff) {
+    header = Buffer.alloc(4);
+    header[0] = 0x81;
+    header[1] = 126;
+    header.writeUInt16BE(payload.length, 2);
+  } else {
+    header = Buffer.alloc(10);
+    header[0] = 0x81;
+    header[1] = 127;
+    header.writeBigUInt64BE(BigInt(payload.length), 2);
+  }
+  return Buffer.concat([header, payload]);
+}
+
+const server = createServer(async (req, res) => {
   if (req.url === "/" || req.url === "/index.html") {
     res.writeHead(200, { "content-type": "text/html" });
     res.end(await readFile(join(here, "index.html")));
@@ -60,4 +80,45 @@ createServer(async (req, res) => {
     return;
   }
   res.writeHead(404).end("not found");
-}).listen(port, () => console.log(`embed demo → http://localhost:${port}`));
+});
+
+server.on("upgrade", (req, socket) => {
+  if (req.url !== "/ws") {
+    socket.destroy();
+    return;
+  }
+  const key = req.headers["sec-websocket-key"];
+  if (typeof key !== "string") {
+    socket.destroy();
+    return;
+  }
+  const accept = createHash("sha1")
+    .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+    .digest("base64");
+  socket.write(
+    [
+      "HTTP/1.1 101 Switching Protocols",
+      "Upgrade: websocket",
+      "Connection: Upgrade",
+      `Sec-WebSocket-Accept: ${accept}`,
+      "",
+      "",
+    ].join("\r\n"),
+  );
+
+  const send = (event) => {
+    if (socket.writable) socket.write(webSocketTextFrame(JSON.stringify(event)));
+  };
+  send(snapshotEvent());
+  const timer = setInterval(() => send(tickEvent()), 1500);
+  const cleanup = () => clearInterval(timer);
+  socket.on("data", (chunk) => {
+    if ((chunk[0] & 0x0f) !== 0x08) return;
+    socket.write(Buffer.from([0x88, 0x00]));
+    socket.end();
+  });
+  socket.on("close", cleanup);
+  socket.on("error", cleanup);
+});
+
+server.listen(port, () => console.log(`embed demo → http://localhost:${port}`));

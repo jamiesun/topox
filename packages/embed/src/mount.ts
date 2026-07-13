@@ -2,11 +2,15 @@ import { createRoot, type Root } from "react-dom/client";
 import { createElement } from "react";
 import {
   connectRuntimeSSE,
+  connectRuntimeWS,
   type GraphDiff,
+  type RuntimeConnectionStatus,
   type RuntimeEvent,
   type RuntimeSSEHandle,
   type RuntimeSSEOptions,
   type RuntimeState,
+  type RuntimeWSHandle,
+  type RuntimeWSOptions,
   type TopoDoc,
 } from "@topox/core";
 import { autoLayoutDiff, type AutoLayoutOptions } from "@topox/editor";
@@ -24,11 +28,13 @@ export interface TopoViewOptions {
   readOnly?: boolean;
   /** Convenience: opens a RuntimeEvent SSE stream immediately. */
   runtimeUrl?: string;
+  /** Transport used by runtimeUrl. Defaults to "sse". */
+  runtimeTransport?: "sse" | "ws";
   /** Fires after each canvas edit has been applied to the internal history. */
   onDiff?: (diff: GraphDiff, doc: TopoDoc) => void;
   onSelect?: (selection: EmbedSelection) => void;
   onRuntimeState?: (state: RuntimeState) => void;
-  onRuntimeStatus?: (status: string) => void;
+  onRuntimeStatus?: (status: RuntimeConnectionStatus) => void;
 }
 
 export interface TopoViewHandle {
@@ -52,6 +58,8 @@ export interface TopoViewHandle {
   clearRuntime(): void;
   /** Connects an SSE stream; closes any previous one. Returns its handle. */
   connectSSE(url: string, options?: RuntimeSSEOptions): RuntimeSSEHandle;
+  /** Connects a native WebSocket stream; closes any previous one. */
+  connectWS(url: string, options?: RuntimeWSOptions): RuntimeWSHandle;
   /** Unmounts, closes streams, removes listeners. */
   destroy(): void;
 }
@@ -75,7 +83,7 @@ export function mountTopoView(el: HTMLElement, options: TopoViewOptions = {}): T
   if (!el.style.height && el.clientHeight === 0) el.style.height = "480px";
 
   const store = new EmbedStore(options.doc, options.viewId, options.readOnly ?? true);
-  let sse: RuntimeSSEHandle | undefined;
+  let runtimeConnection: { close(): void } | undefined;
   let root: Root | undefined = createRoot(el);
 
   const handleDiff = (diff: GraphDiff) => {
@@ -91,8 +99,8 @@ export function mountTopoView(el: HTMLElement, options: TopoViewOptions = {}): T
   root.render(createElement(EmbedApp, { store, onDiff: handleDiff, onSelect: handleSelect }));
 
   const connectSSE = (url: string, sseOptions: RuntimeSSEOptions = {}): RuntimeSSEHandle => {
-    sse?.close();
-    sse = connectRuntimeSSE(url, {
+    runtimeConnection?.close();
+    const connection = connectRuntimeSSE(url, {
       ...sseOptions,
       initial: sseOptions.initial ?? store.runtime,
       onState: (state) => {
@@ -105,10 +113,33 @@ export function mountTopoView(el: HTMLElement, options: TopoViewOptions = {}): T
         options.onRuntimeStatus?.(status);
       },
     });
-    return sse;
+    runtimeConnection = connection;
+    return connection;
   };
 
-  if (options.runtimeUrl) connectSSE(options.runtimeUrl);
+  const connectWS = (url: string, wsOptions: RuntimeWSOptions = {}): RuntimeWSHandle => {
+    runtimeConnection?.close();
+    const connection = connectRuntimeWS(url, {
+      ...wsOptions,
+      initial: wsOptions.initial ?? store.runtime,
+      onState: (state) => {
+        store.setRuntimeState(state);
+        wsOptions.onState?.(state);
+        options.onRuntimeState?.(state);
+      },
+      onStatus: (status) => {
+        wsOptions.onStatus?.(status);
+        options.onRuntimeStatus?.(status);
+      },
+    });
+    runtimeConnection = connection;
+    return connection;
+  };
+
+  if (options.runtimeUrl) {
+    if (options.runtimeTransport === "ws") connectWS(options.runtimeUrl);
+    else connectSSE(options.runtimeUrl);
+  }
 
   return {
     getDoc: () => store.doc,
@@ -134,9 +165,10 @@ export function mountTopoView(el: HTMLElement, options: TopoViewOptions = {}): T
     setRuntimeState: (state) => store.setRuntimeState(state),
     clearRuntime: () => store.clearRuntime(),
     connectSSE,
+    connectWS,
     destroy: () => {
-      sse?.close();
-      sse = undefined;
+      runtimeConnection?.close();
+      runtimeConnection = undefined;
       root?.unmount();
       root = undefined;
     },

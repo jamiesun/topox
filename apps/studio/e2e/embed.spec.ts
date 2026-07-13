@@ -28,3 +28,34 @@ test("plain HTML host mounts, receives runtime events, and destroys the embed", 
   await page.evaluate("view.destroy()");
   await expect(canvas.locator(":scope > *")).toHaveCount(0);
 });
+
+test("plain HTML embed consumes RuntimeEvent messages over native WebSocket", async ({
+  page,
+}) => {
+  await page.goto("http://localhost:8091/");
+
+  const firewall = page.locator('#canvas .react-flow__node[data-id="fw"]');
+  await expect(firewall).toBeVisible();
+  await page.evaluate("window.previousRuntime = view.connectSSE('/stream')");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as Window & { previousRuntime?: { status: string } }).previousRuntime
+            ?.status,
+      ),
+    )
+    .toBe("open");
+  await page.getByRole("button", { name: "connect WS" }).click();
+
+  await expect(page.locator("#status")).toHaveText("ws: open");
+  expect(
+    await page.evaluate(
+      () =>
+        (window as Window & { previousRuntime?: { status: string } }).previousRuntime
+          ?.status,
+    ),
+  ).toBe("closed");
+  await expect(firewall.locator('span[title="running"]')).toBeVisible();
+  await expect(firewall).toContainText(/cpu \d+/);
+});

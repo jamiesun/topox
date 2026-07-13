@@ -65,13 +65,15 @@ view.undo();  view.redo();
 ```
 
 Handle API: `getDoc / setDoc / applyDiff / undo / redo / autoLayout /
-setReadOnly / pushRuntimeEvent / setRuntimeState / connectSSE / destroy`.
+setReadOnly / pushRuntimeEvent / setRuntimeState / connectSSE / connectWS /
+destroy`.
 Edits made on the canvas surface as `onDiff(diff, doc)` — persist them to your
 backend from there.
 
-## Live status over SSE
+## Live status over SSE or WebSocket
 
-The wire protocol is one JSON-encoded `RuntimeEvent` per SSE `data:` line:
+Both transports use the same wire protocol: one JSON-encoded `RuntimeEvent` per
+SSE `data:` line or WebSocket text message:
 
 ```
 data: {"kind":"snapshot","state":{"nodes":{"dev:fw-01":{"status":"running","metrics":{"cpu":12}}},"edges":{}}}
@@ -94,22 +96,35 @@ Rules:
 Client side:
 
 ```js
-view.connectSSE("/api/topo/stream");            // overlay updates live
-// or push events yourself (WebSocket, polling, tests):
+view.connectSSE("/api/topo/stream");
+view.connectWS("wss://example.com/api/topo/ws"); // same messages and callbacks
+// or push events yourself (polling, tests, an existing host connection):
 view.pushRuntimeEvent({ kind: "node", key: "dev:fw-01", patch: { status: "running" } });
 ```
 
+Only downstream RuntimeEvent consumption is defined; WebSocket does not add a
+TopoX command or control protocol. Unexpected WS closes reconnect with bounded
+exponential backoff. Starting either connection through the embed closes the
+previous live connection.
+
 Runtime state is an overlay — it never touches the document or layouts.
 
-Headless (no canvas) consumption uses the same client from `@topox/core`:
+Headless (no canvas) consumption uses the transport clients from `@topox/core`:
 
 ```js
-import { connectRuntimeSSE } from "@topox/core";
+import { connectRuntimeSSE, connectRuntimeWS } from "@topox/core";
 const sub = connectRuntimeSSE("/api/topo/stream", {
   onState: (state) => render(state),
   onStatus: (s) => console.log("sse:", s),   // connecting|open|retrying|closed
 });
 sub.close();
+
+const ws = connectRuntimeWS("wss://example.com/api/topo/ws", {
+  onState: (state) => render(state),
+  onStatus: (s) => console.log("ws:", s),    // same status contract
+  onError: (error, raw) => console.error(error, raw),
+});
+ws.close();
 ```
 
 ## Full editing: link to a shared studio
@@ -150,11 +165,13 @@ Typical flow: your app shows the read-only embed; an **Edit** button opens
 re-fetches and renders the updated document.
 
 
-`examples/embed-plain/` is a complete no-framework host with a fake SSE feed:
+`examples/embed-plain/` is a complete no-framework host with fake SSE and
+native WebSocket feeds:
 
 ```bash
 npm run build -ws
 node examples/embed-plain/serve.mjs     # → http://localhost:8090
 ```
 
-Open the page, click **connect SSE**, watch statuses and metrics stream in.
+Open the page, click **connect SSE** or **connect WS**, and watch the same
+statuses and metrics stream in.

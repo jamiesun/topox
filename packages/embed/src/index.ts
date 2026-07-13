@@ -5,6 +5,7 @@ export { EmbedStore, type EmbedSelection, type EmbedSnapshot } from "./store.js"
 export {
   applyDiff,
   connectRuntimeSSE,
+  connectRuntimeWS,
   emptyDoc,
   emptyRuntime,
   invertDiff,
@@ -13,5 +14,7 @@ export {
   type RuntimeEvent,
   type RuntimeSSEHandle,
   type RuntimeState,
+  type RuntimeWSHandle,
+  type RuntimeWSOptions,
   type TopoDoc,
 } from "@topox/core";

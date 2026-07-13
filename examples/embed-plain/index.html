@@ -16,11 +16,12 @@
   <body>
     <header>
       <b>TopoX embed demo — no framework on this page</b>
-      <span id="status">sse: idle</span>
+      <span id="status">runtime: idle</span>
       <button id="edit">enable editing</button>
       <button id="layout">auto layout</button>
       <button id="undo">undo</button>
       <button id="sse">connect SSE</button>
+      <button id="ws">connect WS</button>
     </header>
     <div id="canvas"></div>
 
@@ -59,11 +60,13 @@
         readOnly: true,
         onDiff: (diff) => console.log("diff:", diff.summary),
         onSelect: (sel) => console.log("selected:", sel),
-        onRuntimeStatus: (s) => (document.getElementById("status").textContent = "sse: " + s),
+        onRuntimeStatus: (s) =>
+          (document.getElementById("status").textContent = runtimeTransport + ": " + s),
       });
       view.autoLayout({ direction: "TB" });
 
       let editing = false;
+      let runtimeTransport = "runtime";
       document.getElementById("edit").onclick = (e) => {
         editing = !editing;
         view.setReadOnly(!editing);
@@ -71,7 +74,15 @@
       };
       document.getElementById("layout").onclick = () => view.autoLayout({ direction: "LR" });
       document.getElementById("undo").onclick = () => view.undo();
-      document.getElementById("sse").onclick = () => view.connectSSE("/stream");
+      document.getElementById("sse").onclick = () => {
+        runtimeTransport = "sse";
+        view.connectSSE("/stream");
+      };
+      document.getElementById("ws").onclick = () => {
+        runtimeTransport = "ws";
+        const scheme = location.protocol === "https:" ? "wss" : "ws";
+        view.connectWS(`${scheme}://${location.host}/ws`);
+      };
     </script>
   </body>
 </html>
