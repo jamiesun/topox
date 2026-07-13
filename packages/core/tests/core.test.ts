@@ -13,6 +13,9 @@ import {
   validateDoc,
   validateGraph,
   isValid,
+  emptyRuntime,
+  applyRuntimeEvent,
+  resolveRuntime,
 } from "../src/index.js";
 import type { GraphDiff, Node, TopoDoc } from "../src/index.js";
 
@@ -206,5 +209,65 @@ describe("inventory projection", () => {
     expect(searchNodes(graph, "r2s:").map((n) => n.id)).toEqual(["a"]);
     expect(searchNodes(graph, "net-cloud").map((n) => n.id)).toEqual(["c"]);
     expect(searchNodes(graph, "")).toHaveLength(3);
+  });
+});
+
+describe("runtime overlay", () => {
+  it("applies node/edge events immutably with per-key metric merge", () => {
+    const s0 = emptyRuntime();
+    const s1 = applyRuntimeEvent(s0, {
+      kind: "node",
+      key: "r2s:a",
+      patch: { status: "running", metrics: { cpu: 10, mem: 40 } },
+      ts: 1000,
+    });
+    const s2 = applyRuntimeEvent(s1, {
+      kind: "node",
+      key: "r2s:a",
+      patch: { metrics: { cpu: 55 } },
+      ts: 2000,
+    });
+    expect(s0.nodes).toEqual({});
+    expect(s1.nodes["r2s:a"]).toMatchObject({ status: "running", metrics: { cpu: 10, mem: 40 } });
+    expect(s2.nodes["r2s:a"]).toMatchObject({
+      status: "running",
+      metrics: { cpu: 55, mem: 40 },
+      updatedAt: 2000,
+    });
+    expect(s2.ts).toBe(2000);
+  });
+
+  it("removes entries with null patches and replaces on snapshot", () => {
+    let s = applyRuntimeEvent(emptyRuntime(), {
+      kind: "edge",
+      key: "e1",
+      patch: { active: true, metrics: { qps: 120 } },
+      ts: 1,
+    });
+    s = applyRuntimeEvent(s, { kind: "edge", key: "e1", patch: null, ts: 2 });
+    expect(s.edges).toEqual({});
+    s = applyRuntimeEvent(s, {
+      kind: "snapshot",
+      state: { nodes: { x: { status: "error" } }, edges: {} },
+      ts: 3,
+    });
+    expect(s.nodes["x"]?.status).toBe("error");
+    expect(s.ts).toBe(3);
+  });
+
+  it("resolves by Node.ref first, then node id; edges by id", () => {
+    const doc = fixtureDoc();
+    let s = emptyRuntime();
+    // "a" has ref "r2s:a" — producer keys by ref. "b" has no ref — keyed by id.
+    s = applyRuntimeEvent(s, { kind: "node", key: "r2s:a", patch: { status: "running" } });
+    s = applyRuntimeEvent(s, { kind: "node", key: "b", patch: { status: "error" } });
+    s = applyRuntimeEvent(s, { kind: "node", key: "ghost", patch: { status: "offline" } });
+    s = applyRuntimeEvent(s, { kind: "edge", key: "e2", patch: { active: true } });
+    const resolved = resolveRuntime(doc, s);
+    expect(resolved.nodes.get("a")?.status).toBe("running");
+    expect(resolved.nodes.get("b")?.status).toBe("error");
+    expect(resolved.nodes.has("c")).toBe(false);
+    expect(resolved.edges.get("e2")?.active).toBe(true);
+    expect(resolved.edges.has("e1")).toBe(false);
   });
 });

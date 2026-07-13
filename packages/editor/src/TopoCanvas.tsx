@@ -9,10 +9,10 @@ import {
   type Node as RFNode,
   type NodeProps,
 } from "@xyflow/react";
-import type { GraphDiff, TopoDoc } from "@topox/core";
+import type { GraphDiff, NodeStatus, ResolvedRuntime, TopoDoc } from "@topox/core";
 import { makeSetLayout } from "@topox/core";
 import { Handle, Position } from "@xyflow/react";
-import { toFlow, type TopoNodeData, type TopoRFNode } from "./convert.js";
+import { formatMetrics, toFlow, type TopoNodeData, type TopoRFNode } from "./convert.js";
 
 export interface TopoCanvasProps {
   doc: TopoDoc;
@@ -21,7 +21,17 @@ export interface TopoCanvasProps {
   onDiff: (diff: GraphDiff) => void;
   onSelect?: (nodeIds: string[], edgeIds: string[]) => void;
   readOnly?: boolean;
+  /** Live overlay (resolveRuntime output). Purely visual; never enters diffs. */
+  runtime?: ResolvedRuntime;
 }
+
+export const statusPalette: Record<NodeStatus, string> = {
+  running: "#16a34a",
+  waiting: "#d97706",
+  stopped: "#94a3b8",
+  error: "#dc2626",
+  offline: "#475569",
+};
 
 const typePalette: Record<string, string> = {
   "net-router": "#2563eb",
@@ -39,10 +49,13 @@ const typePalette: Record<string, string> = {
 function TopoNode({ data, selected }: NodeProps<TopoRFNode>) {
   const d = data as TopoNodeData;
   const accent = typePalette[d.nodeType] ?? "#475569";
+  const statusColor = d.status !== undefined ? statusPalette[d.status] : undefined;
+  const borderColor =
+    d.status === "error" ? statusPalette.error : selected ? accent : "#d0d7de";
   return (
     <div
       style={{
-        border: `1.5px solid ${selected ? accent : "#d0d7de"}`,
+        border: `1.5px solid ${borderColor}`,
         borderLeft: `4px solid ${accent}`,
         borderRadius: 8,
         background: "#fff",
@@ -50,15 +63,37 @@ function TopoNode({ data, selected }: NodeProps<TopoRFNode>) {
         minWidth: 120,
         boxShadow: selected ? `0 0 0 3px ${accent}22` : "0 1px 2px rgba(0,0,0,.06)",
         fontFamily: "ui-sans-serif, system-ui, sans-serif",
+        opacity: d.status === "offline" ? 0.55 : 1,
+        position: "relative",
       }}
     >
       <Handle type="target" position={Position.Top} style={{ opacity: 0.4 }} />
+      {statusColor !== undefined ? (
+        <span
+          title={`${d.status}${d.message !== undefined ? `: ${d.message}` : ""}`}
+          style={{
+            position: "absolute",
+            top: 6,
+            right: 6,
+            width: 9,
+            height: 9,
+            borderRadius: "50%",
+            background: statusColor,
+            boxShadow: `0 0 0 3px ${statusColor}33`,
+          }}
+        />
+      ) : null}
       <div style={{ fontSize: 10, color: accent, fontWeight: 600, letterSpacing: 0.4 }}>
         {d.nodeType}
       </div>
       <div style={{ fontSize: 13, fontWeight: 600, color: "#1f2d3d" }}>{d.label}</div>
       {d.ref ? (
         <div style={{ fontSize: 10, color: "#8b95a1", marginTop: 2 }}>{d.ref}</div>
+      ) : null}
+      {d.metrics !== undefined ? (
+        <div style={{ fontSize: 10, color: "#475569", marginTop: 3, fontVariantNumeric: "tabular-nums" }}>
+          {formatMetrics(d.metrics)}
+        </div>
       ) : null}
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0.4 }} />
     </div>
@@ -78,8 +113,8 @@ function nextEdgeId(existing: Set<string>): string {
  * TopoCanvas is a controlled component: doc in, diffs out.
  * It renders the given View's layout and translates canvas gestures into GraphDiffs.
  */
-export function TopoCanvas({ doc, viewId, onDiff, onSelect, readOnly = false }: TopoCanvasProps) {
-  const { nodes, edges } = useMemo(() => toFlow(doc, viewId), [doc, viewId]);
+export function TopoCanvas({ doc, viewId, onDiff, onSelect, readOnly = false, runtime }: TopoCanvasProps) {
+  const { nodes, edges } = useMemo(() => toFlow(doc, viewId, runtime), [doc, viewId, runtime]);
   const view = doc.views.find((v) => v.id === viewId) ?? doc.views[0];
 
   const handleNodeDragStop = useCallback(

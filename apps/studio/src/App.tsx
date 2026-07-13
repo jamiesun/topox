@@ -1,18 +1,22 @@
-import { useCallback, useMemo, useRef, useState } from "react";
-import type { GraphDiff, TopoDoc } from "@topox/core";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { GraphDiff, RuntimeState, TopoDoc } from "@topox/core";
 import {
   applyDiff,
+  applyRuntimeEvent,
+  emptyRuntime,
   History,
   inventoryToCsv,
+  resolveRuntime,
   searchNodes,
   toInventory,
   validateDoc,
 } from "@topox/core";
 import { compileDsl } from "@topox/dsl";
-import { autoLayoutDiff, TopoCanvas } from "@topox/editor";
+import { autoLayoutDiff, statusPalette, TopoCanvas } from "@topox/editor";
 import { docFromYaml, docToYaml, parseMermaid, toMermaid } from "@topox/interop";
 import { AiPanel } from "./AiPanel.js";
 import { demoDoc } from "./demo.js";
+import { simulateTick } from "./simulate.js";
 
 type Tab = "canvas" | "inventory" | "json";
 type SideTab = "inspect" | "ai";
@@ -66,6 +70,8 @@ export function App() {
   const [query, setQuery] = useState("");
   const [selection, setSelection] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [runtime, setRuntime] = useState<RuntimeState>(emptyRuntime());
+  const [simulating, setSimulating] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const history = historyRef.current;
@@ -127,6 +133,32 @@ export function App() {
   }, []);
 
   const issues = useMemo(() => validateDoc(doc), [doc]);
+
+  // Live overlay: simulator ticks feed the same event pipeline a real
+  // WebSocket/SSE collector would. Runtime state never enters doc/history.
+  useEffect(() => {
+    if (!simulating) return;
+    const timer = setInterval(() => {
+      setRuntime((prev) => simulateTick(historyRef.current.doc, prev).reduce(applyRuntimeEvent, prev));
+    }, 1200);
+    return () => clearInterval(timer);
+  }, [simulating]);
+
+  const toggleSimulate = useCallback(() => {
+    setSimulating((on) => {
+      if (on) setRuntime(emptyRuntime());
+      return !on;
+    });
+  }, []);
+
+  const resolvedRuntime = useMemo(
+    () => (runtime.ts !== undefined ? resolveRuntime(doc, runtime) : undefined),
+    [doc, runtime],
+  );
+  const selectedRuntime = useMemo(
+    () => (selection.length === 1 && selection[0] !== undefined ? resolvedRuntime?.nodes.get(selection[0]) : undefined),
+    [resolvedRuntime, selection],
+  );
 
   // AI/DSL pipeline: DSL text compiles live into a staged diff; the canvas
   // previews the result read-only until the user applies or discards.
@@ -197,6 +229,20 @@ export function App() {
         <button style={styles.btn} onClick={exportYaml}>YAML</button>
         <button style={styles.btn} onClick={exportMermaid}>Mermaid</button>
         <button style={styles.btn} onClick={exportCsv}>CSV</button>
+        <span style={{ width: 12 }} />
+        <button style={styles.tab(simulating)} onClick={toggleSimulate}>
+          {simulating ? "◉ Live" : "Simulate"}
+        </button>
+        {simulating ? (
+          <span style={{ display: "inline-flex", gap: 8, fontSize: 11, color: "#64748b" }}>
+            {(Object.entries(statusPalette) as [string, string][]).map(([s, c]) => (
+              <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: c }} />
+                {s}
+              </span>
+            ))}
+          </span>
+        ) : null}
         <input
           ref={fileInputRef}
           type="file"
@@ -264,6 +310,7 @@ export function App() {
               onDiff={pushDiff}
               onSelect={(n) => setSelection(n)}
               readOnly={previewDoc !== null}
+              {...(resolvedRuntime !== undefined ? { runtime: resolvedRuntime } : {})}
             />
           ) : tab === "inventory" ? (
             <div style={{ overflow: "auto", height: "100%", padding: 16 }}>
@@ -331,6 +378,36 @@ export function App() {
                   }
                   style={{ width: "100%", border: "1px solid #d0d7de", borderRadius: 6, padding: "4px 8px", boxSizing: "border-box" }}
                 />
+                {selectedRuntime ? (
+                  <div style={{ marginTop: 10, borderTop: "1px dashed #e2e8f0", paddingTop: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          background: selectedRuntime.status !== undefined ? statusPalette[selectedRuntime.status] : "#94a3b8",
+                        }}
+                      />
+                      <strong>{selectedRuntime.status ?? "unknown"}</strong>
+                      {selectedRuntime.message ? (
+                        <span style={{ color: "#64748b" }}>{selectedRuntime.message}</span>
+                      ) : null}
+                    </div>
+                    {selectedRuntime.metrics ? (
+                      <table style={{ marginTop: 6, fontSize: 12, fontVariantNumeric: "tabular-nums" }}>
+                        <tbody>
+                          {Object.entries(selectedRuntime.metrics).map(([k, v]) => (
+                            <tr key={k}>
+                              <td style={{ color: "#64748b", paddingRight: 12 }}>{k}</td>
+                              <td>{v}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div style={{ color: "#8b95a1" }}>{selection.length > 1 ? `${selection.length} nodes selected` : "select a node"}</div>

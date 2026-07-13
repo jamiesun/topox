@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyDiff, emptyDoc, isValid, validateDoc } from "@topox/core";
+import { applyDiff, applyRuntimeEvent, emptyDoc, emptyRuntime, isValid, resolveRuntime, validateDoc } from "@topox/core";
 import type { TopoDoc } from "@topox/core";
 import { autoLayoutDiff } from "../src/layout.js";
 import { toFlow } from "../src/convert.js";
@@ -51,5 +51,35 @@ describe("toFlow", () => {
     expect(b.position.x).toBeGreaterThanOrEqual(0);
     expect(edges).toHaveLength(2);
     expect(edges[0]).toMatchObject({ source: "a", target: "b" });
+  });
+});
+
+describe("runtime overlay projection", () => {
+  it("carries status/metrics into node data and animates active edges", () => {
+    const doc = applyDiff(chainDoc(), {
+      ops: [
+        {
+          op: "update_node",
+          id: "b",
+          before: {},
+          after: { ref: "res-b" },
+        },
+      ],
+    });
+    let s = emptyRuntime();
+    s = applyRuntimeEvent(s, {
+      kind: "node",
+      key: "res-b", // via ref
+      patch: { status: "error", message: "BGP flap", metrics: { cpu: 93.4 } },
+    });
+    s = applyRuntimeEvent(s, { kind: "edge", key: "e1", patch: { active: true, metrics: { qps: 120 } } });
+    const { nodes, edges } = toFlow(doc, "default", resolveRuntime(doc, s));
+    const b = nodes.find((n) => n.id === "b")!;
+    expect(b.data).toMatchObject({ status: "error", message: "BGP flap", metrics: { cpu: 93.4 } });
+    expect(nodes.find((n) => n.id === "a")!.data.status).toBeUndefined();
+    const e1 = edges.find((e) => e.id === "e1")!;
+    expect(e1.animated).toBe(true);
+    expect(e1.label).toBe("qps 120");
+    expect(edges.find((e) => e.id === "e2")!.animated).toBeUndefined();
   });
 });
