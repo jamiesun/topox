@@ -20,6 +20,7 @@ import { autoLayoutDiff, statusPalette, TopoCanvas } from "@topox/editor";
 import { docFromYaml, docToYaml, parseMermaid, toMermaid } from "@topox/interop";
 import { AiPanel } from "./AiPanel.js";
 import { demoDoc } from "./demo.js";
+import { fetchDoc, parseDocSource, saveDocTo } from "./docsource.js";
 import { Inspector } from "./Inspector.js";
 import { simulateTick } from "./simulate.js";
 import { TimelineBar } from "./TimelineBar.js";
@@ -82,6 +83,9 @@ export function App() {
   const [simulating, setSimulating] = useState(false);
   const [replayTs, setReplayTs] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "failed">("idle");
+  const docSource = useMemo(() => parseDocSource(window.location.search), []);
+  const savedDocRef = useRef<TopoDoc | null>(null);
   const timelineRef = useRef(new RuntimeTimeline({ checkpointInterval: 25 }));
   const runtimeRef = useRef(runtime);
   runtimeRef.current = runtime;
@@ -109,8 +113,52 @@ export function App() {
     [history, pushDiff, viewId],
   );
 
-  const importFile = useCallback((name: string, raw: string) => {
-    try {
+  // Shared-studio mode: load the document named by ?src=, save via PUT.
+  useEffect(() => {
+    if (!docSource) return;
+    let cancelled = false;
+    fetchDoc(docSource.src)
+      .then((loaded) => {
+        if (cancelled) return;
+        historyRef.current = new History(loaded);
+        savedDocRef.current = loaded;
+        setDoc(loaded);
+        setError(null);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [docSource]);
+
+  const dirty = docSource !== null && savedDocRef.current !== doc;
+
+  const saveRemote = useCallback(() => {
+    if (!docSource) return;
+    const current = historyRef.current.doc;
+    setSaveState("saving");
+    saveDocTo(docSource.save, current)
+      .then(() => {
+        savedDocRef.current = current;
+        setSaveState("saved");
+        setError(null);
+      })
+      .catch((e: unknown) => {
+        setSaveState("failed");
+        setError(e instanceof Error ? e.message : String(e));
+      });
+  }, [docSource]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  const importFile = useCallback((name: string, raw: string) => {    try {
       const ext = name.toLowerCase().split(".").pop() ?? "";
       let imported: TopoDoc;
       let notice: string | null = null;
@@ -347,6 +395,31 @@ export function App() {
         <button style={styles.btn} onClick={exportYaml}>YAML</button>
         <button style={styles.btn} onClick={exportMermaid}>Mermaid</button>
         <button style={styles.btn} onClick={exportCsv}>CSV</button>
+        {docSource ? (
+          <>
+            <span style={{ width: 12 }} />
+            <button
+              style={{ ...styles.btn, ...(dirty ? { borderColor: "#2563eb", color: "#2563eb" } : {}) }}
+              onClick={saveRemote}
+              disabled={!dirty || saveState === "saving"}
+              title={`PUT ${docSource.save}`}
+            >
+              {saveState === "saving" ? "Saving…" : dirty ? "Save*" : saveState === "failed" ? "Retry save" : "Saved"}
+            </button>
+            {docSource.ret ? (
+              <button
+                style={styles.btn}
+                onClick={() => {
+                  if (!dirty || window.confirm("Discard unsaved changes?")) {
+                    window.location.href = docSource.ret!;
+                  }
+                }}
+              >
+                ← Back
+              </button>
+            ) : null}
+          </>
+        ) : null}
         <span style={{ width: 12 }} />
         <button style={styles.tab(simulating)} onClick={toggleSimulate}>
           {simulating ? "◉ Live" : "Simulate"}

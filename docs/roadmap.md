@@ -88,6 +88,10 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 
   Canvas / Inventory / JSON 三视图；Inspector（节点/边/组的基础属性、自定义 attrs、JSON 整体编辑，草稿式提交）；AI 面板（Prompt → DSL → Diff → Preview → Apply，OpenAI 兼容端点）；模拟器 + Timeline DVR 条；JSON/YAML/Mermaid 导入导出 + CSV 清单导出；搜索过滤。证据：`apps/studio/src/`。**注意：studio 目前无自动化测试**（见验收矩阵）。
 
+- **共享 Studio 文档源协议**
+
+  `?src=<url>&save=<url>&ret=<url>`：studio 从宿主后端 GET 加载文档、PUT 保存回去（同域自带 cookie）、可跳回业务系统；未保存改动有 `Save*` 标记与离开页警告。业务前端用只读 embed 展示，编辑跳转共享 studio，一份部署服务所有系统。证据：`apps/studio/src/docsource.ts`，接线在 `App.tsx`，指南 `docs/embedding.md`。
+
 - **搜索**
 
   按名称/标签/类型/属性过滤节点。证据：`packages/core/src/inventory.ts`（`searchNodes`），core.test.ts 中含字段匹配断言。
@@ -177,6 +181,7 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 | 自动布局（dagre） | 中 | ❌ 缺口（无 UI 级 E2E） | 待核验 | 不适用 | ✅ 布局以 diff 产出，可 undo | `packages/editor/tests/editor.test.ts` autoLayoutDiff（含幂等性） |
 | SSE 运行态接入（connectRuntimeSSE） | 中 | ✅ 单测覆盖 snapshot→patch 折叠（浏览器级 E2E 缺口） | ✅ 畸形消息 onError 后继续流 | 不适用 | ✅ 叠加层可整体清除；close 幂等 | `packages/core/tests/sse.test.ts` |
 | 嵌入挂载（mountTopoView） | 中 | ❌ 缺口（示例页手工验证，浏览器 E2E 待补） | 待核验 | 不适用 | ✅ 编辑走同一 diff/undo 管线 | `examples/embed-plain/`（手工冒烟）；UI 级无 |
+| 共享 Studio 文档源（src/save/ret） | 高（PUT 覆盖宿主文档） | ❌ 缺口（浏览器手工验证 load→edit→save 闭环，无自动化） | ✅ 加载校验失败回退 demo 并报错；保存失败可重试 | 待核验（依赖宿主端点鉴权，同域 cookie 透传） | ✅ 保存失败不动本地状态；未保存改动有离开警告 | `apps/studio/src/docsource.ts`（手工冒烟）；自动化无 |
 
 缺口的最低期望：
 

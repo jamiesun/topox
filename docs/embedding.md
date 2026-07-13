@@ -112,7 +112,40 @@ const sub = connectRuntimeSSE("/api/topo/stream", {
 sub.close();
 ```
 
-## Working example
+## Full editing: link to a shared studio
+
+The embed handles viewing and light editing. For the full editing surface
+(Inspector, AI panel, import/export, grouping, timeline) don't rebuild it —
+deploy **one shared studio** and link to it. The studio builds to plain static
+files (`apps/studio && npm run build` → `dist/`), so it can be served by
+nginx or embedded in a Go binary under any route; `base: "./"` is already set.
+
+The studio understands three URL parameters:
+
+```
+/studio/?src=/api/topo/docs/42        load document (GET, JSON TopoDoc)
+        &save=/api/topo/docs/42      save endpoint (PUT; defaults to src)
+        &ret=/network/42             optional "Back" link target
+```
+
+- `src` — fetched with `credentials: "include"`, so same-domain deployments
+  reuse your session cookies and need no CORS. Response must be a valid
+  `TopoDoc`; it replaces the demo document and resets undo history.
+- `save` — a **Save** button appears; unsaved edits mark it `Save*` and arm a
+  leave-page warning. Saving PUTs the whole document as JSON.
+- `ret` — a **← Back** button appears (confirms if there are unsaved changes).
+
+Host-side integration is one link and two handlers:
+
+```
+GET /api/topo/docs/42   → 200 application/json  (TopoDoc)
+PUT /api/topo/docs/42   ← TopoDoc JSON          (store it; 2xx = saved)
+```
+
+Typical flow: your app shows the read-only embed; an **Edit** button opens
+`/studio/?src=…&ret=…`; the user edits, saves, and comes back — the embed
+re-fetches and renders the updated document.
+
 
 `examples/embed-plain/` is a complete no-framework host with a fake SSE feed:
 
