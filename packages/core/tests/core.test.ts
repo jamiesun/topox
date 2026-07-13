@@ -16,6 +16,7 @@ import {
   emptyRuntime,
   applyRuntimeEvent,
   resolveRuntime,
+  RuntimeTimeline,
 } from "../src/index.js";
 import type { GraphDiff, Node, TopoDoc } from "../src/index.js";
 
@@ -269,5 +270,65 @@ describe("runtime overlay", () => {
     expect(resolved.nodes.has("c")).toBe(false);
     expect(resolved.edges.get("e2")?.active).toBe(true);
     expect(resolved.edges.has("e1")).toBe(false);
+  });
+});
+
+describe("runtime timeline", () => {
+  const nodeEv = (key: string, cpu: number, ts: number): Parameters<RuntimeTimeline["record"]>[0] => ({
+    kind: "node",
+    key,
+    patch: { status: "running", metrics: { cpu } },
+    ts,
+  });
+
+  it("replays state at any timestamp (inclusive, between, before, after)", () => {
+    const tl = new RuntimeTimeline();
+    tl.record(nodeEv("a", 10, 1000));
+    tl.record(nodeEv("a", 20, 2000));
+    tl.record(nodeEv("b", 5, 3000));
+    expect(tl.range).toEqual({ start: 1000, end: 3000 });
+    expect(tl.stateAt(999).nodes).toEqual({});
+    expect(tl.stateAt(1000).nodes["a"]?.metrics?.["cpu"]).toBe(10);
+    expect(tl.stateAt(2500).nodes["a"]?.metrics?.["cpu"]).toBe(20);
+    expect(tl.stateAt(2500).nodes["b"]).toBeUndefined();
+    const end = tl.stateAt(99999);
+    expect(end.nodes["a"]?.metrics?.["cpu"]).toBe(20);
+    expect(end.nodes["b"]?.metrics?.["cpu"]).toBe(5);
+  });
+
+  it("checkpointed seeks equal a full linear replay", () => {
+    const tl = new RuntimeTimeline({ checkpointInterval: 3 });
+    let linear = emptyRuntime();
+    for (let i = 0; i < 20; i++) {
+      const ev = nodeEv("n", i, 1000 + i * 100);
+      tl.record(ev);
+      linear = applyRuntimeEvent(linear, ev);
+      expect(tl.stateAt(1000 + i * 100)).toEqual(linear);
+    }
+    // mid-window seek
+    expect(tl.stateAt(1750).nodes["n"]?.metrics?.["cpu"]).toBe(7);
+  });
+
+  it("trims old events into the base state without corrupting replay", () => {
+    const tl = new RuntimeTimeline({ checkpointInterval: 2, maxEvents: 8 });
+    for (let i = 0; i < 20; i++) tl.record(nodeEv("n", i, 1000 + i * 10));
+    expect(tl.length).toBeLessThanOrEqual(8);
+    // before the retained window → folded base still carries history
+    const base = tl.stateAt(tl.range!.start - 1);
+    expect(typeof base.nodes["n"]?.metrics?.["cpu"]).toBe("number");
+    // latest is intact
+    expect(tl.stateAt(9999).nodes["n"]?.metrics?.["cpu"]).toBe(19);
+    // a seek inside the window is exact
+    const inside = tl.range!.start;
+    const cpuInside = tl.stateAt(inside).nodes["n"]?.metrics?.["cpu"];
+    expect(cpuInside).toBe((inside - 1000) / 10);
+  });
+
+  it("pins wall-clock ts on unstamped events and keeps order monotonic", () => {
+    const tl = new RuntimeTimeline();
+    tl.record({ kind: "node", key: "x", patch: { status: "running" } }, 5000);
+    tl.record(nodeEv("x", 1, 4000)); // out of order → clamped to 5000
+    expect(tl.range).toEqual({ start: 5000, end: 5000 });
+    expect(tl.stateAt(5000).nodes["x"]?.metrics?.["cpu"]).toBe(1);
   });
 });

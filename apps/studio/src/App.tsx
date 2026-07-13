@@ -7,6 +7,7 @@ import {
   History,
   inventoryToCsv,
   resolveRuntime,
+  RuntimeTimeline,
   searchNodes,
   toInventory,
   validateDoc,
@@ -17,6 +18,7 @@ import { docFromYaml, docToYaml, parseMermaid, toMermaid } from "@topox/interop"
 import { AiPanel } from "./AiPanel.js";
 import { demoDoc } from "./demo.js";
 import { simulateTick } from "./simulate.js";
+import { TimelineBar } from "./TimelineBar.js";
 
 type Tab = "canvas" | "inventory" | "json";
 type SideTab = "inspect" | "ai";
@@ -72,6 +74,11 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<RuntimeState>(emptyRuntime());
   const [simulating, setSimulating] = useState(false);
+  const [replayTs, setReplayTs] = useState<number | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const timelineRef = useRef(new RuntimeTimeline({ checkpointInterval: 25 }));
+  const runtimeRef = useRef(runtime);
+  runtimeRef.current = runtime;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const history = historyRef.current;
@@ -141,25 +148,71 @@ export function App() {
   const issues = useMemo(() => validateDoc(doc), [doc]);
 
   // Live overlay: simulator ticks feed the same event pipeline a real
-  // WebSocket/SSE collector would. Runtime state never enters doc/history.
+  // WebSocket/SSE collector would. Runtime state never enters doc/history;
+  // every event is also recorded into the timeline for replay.
   useEffect(() => {
     if (!simulating) return;
     const timer = setInterval(() => {
-      setRuntime((prev) => simulateTick(historyRef.current.doc, prev).reduce(applyRuntimeEvent, prev));
+      const ts = Date.now();
+      const events = simulateTick(historyRef.current.doc, runtimeRef.current).map((e) => ({ ...e, ts }));
+      for (const e of events) timelineRef.current.record(e);
+      setRuntime((prev) => events.reduce(applyRuntimeEvent, prev));
     }, 1200);
     return () => clearInterval(timer);
   }, [simulating]);
 
   const toggleSimulate = useCallback(() => {
     setSimulating((on) => {
-      if (on) setRuntime(emptyRuntime());
+      if (on) {
+        setRuntime(emptyRuntime());
+        timelineRef.current.clear();
+        setReplayTs(null);
+        setPlaying(false);
+      }
       return !on;
     });
   }, []);
 
+  // DVR playback: advance the replay cursor at 1x, chasing the live edge.
+  useEffect(() => {
+    if (!playing) return;
+    const timer = setInterval(() => {
+      setReplayTs((prev) => {
+        const end = timelineRef.current.range?.end;
+        return prev === null || end === undefined ? prev : Math.min(prev + 500, end);
+      });
+    }, 500);
+    return () => clearInterval(timer);
+  }, [playing]);
+
+  const timelineRange = timelineRef.current.range;
+  const handleSeek = useCallback((ts: number) => {
+    setPlaying(false);
+    setReplayTs(ts);
+  }, []);
+  const handleTogglePlay = useCallback(() => {
+    if (replayTs === null) {
+      const start = timelineRef.current.range?.start;
+      if (start === undefined) return;
+      setReplayTs(start); // Play from live = replay from the beginning
+      setPlaying(true);
+    } else {
+      setPlaying((p) => !p);
+    }
+  }, [replayTs]);
+  const handleLive = useCallback(() => {
+    setPlaying(false);
+    setReplayTs(null);
+  }, []);
+
+  const replayState = useMemo(
+    () => (replayTs !== null ? timelineRef.current.stateAt(replayTs) : null),
+    [replayTs],
+  );
+  const activeRuntime = replayState ?? runtime;
   const resolvedRuntime = useMemo(
-    () => (runtime.ts !== undefined ? resolveRuntime(doc, runtime) : undefined),
-    [doc, runtime],
+    () => (activeRuntime.ts !== undefined ? resolveRuntime(doc, activeRuntime) : undefined),
+    [doc, activeRuntime],
   );
   const selectedRuntime = useMemo(
     () => (selection.length === 1 && selection[0] !== undefined ? resolvedRuntime?.nodes.get(selection[0]) : undefined),
@@ -310,6 +363,7 @@ export function App() {
           ) : null}
           <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
           {tab === "canvas" ? (
+            <>
             <TopoCanvas
               doc={previewDoc ?? doc}
               viewId={viewId}
@@ -318,6 +372,17 @@ export function App() {
               readOnly={previewDoc !== null}
               {...(resolvedRuntime !== undefined ? { runtime: resolvedRuntime } : {})}
             />
+            {timelineRange !== null ? (
+              <TimelineBar
+                range={timelineRange}
+                replayTs={replayTs}
+                playing={playing}
+                onSeek={handleSeek}
+                onTogglePlay={handleTogglePlay}
+                onLive={handleLive}
+              />
+            ) : null}
+            </>
           ) : tab === "inventory" ? (
             <div style={{ overflow: "auto", height: "100%", padding: 16 }}>
               <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}>

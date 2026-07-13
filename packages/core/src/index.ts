@@ -5,3 +5,4 @@ export * from "./history.js";
 export * from "./inventory.js";
 export * from "./factory.js";
 export * from "./runtime.js";
+export * from "./timeline.js";
