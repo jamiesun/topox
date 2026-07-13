@@ -21,6 +21,7 @@ import { docFromYaml, docToYaml, parseMermaid, toMermaid } from "@topox/interop"
 import { AiPanel } from "./AiPanel.js";
 import { demoDoc } from "./demo.js";
 import { fetchDoc, parseDocSource, saveDocTo } from "./docsource.js";
+import { Dropdown } from "./Dropdown.js";
 import { Inspector } from "./Inspector.js";
 import { simulateTick } from "./simulate.js";
 import { TimelineBar } from "./TimelineBar.js";
@@ -391,10 +392,16 @@ export function App() {
           Ungroup
         </button>
         <button style={styles.btn} onClick={() => fileInputRef.current?.click()}>Import</button>
-        <button style={styles.btn} onClick={exportJson}>JSON</button>
-        <button style={styles.btn} onClick={exportYaml}>YAML</button>
-        <button style={styles.btn} onClick={exportMermaid}>Mermaid</button>
-        <button style={styles.btn} onClick={exportCsv}>CSV</button>
+        <Dropdown
+          label="Export"
+          buttonStyle={styles.btn}
+          items={[
+            { label: "JSON", hint: ".topox.json", onSelect: exportJson },
+            { label: "YAML", hint: ".topox.yaml", onSelect: exportYaml },
+            { label: "Mermaid", hint: ".mmd", onSelect: exportMermaid },
+            { label: "CSV inventory", hint: ".csv", onSelect: exportCsv },
+          ]}
+        />
         {docSource ? (
           <>
             <span style={{ width: 12 }} />
