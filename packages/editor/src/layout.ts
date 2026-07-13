@@ -2,8 +2,10 @@ import dagre from "@dagrejs/dagre";
 import type { GraphDiff, TopoDoc } from "@topox/core";
 import { makeSetLayout } from "@topox/core";
 
+export type LayoutDirection = "TB" | "BT" | "LR" | "RL";
+
 export interface AutoLayoutOptions {
-  direction?: "TB" | "LR";
+  direction?: LayoutDirection;
   nodeWidth?: number;
   nodeHeight?: number;
   gapX?: number;

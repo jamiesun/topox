@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { GraphDiff, NodeLayout, RuntimeState, TopoDoc } from "@topox/core";
+import type { DiffOp, GraphDiff, NodeLayout, RuntimeState, TopoDoc } from "@topox/core";
 import {
   applyDiff,
   applyRuntimeEvent,
+  emptyDoc,
   emptyRuntime,
   History,
   inventoryToCsv,
@@ -19,7 +20,7 @@ import {
   validateDoc,
 } from "@topox/core";
 import { compileDsl } from "@topox/dsl";
-import { autoLayoutDiff, statusPalette, toFlow, TopoCanvas } from "@topox/editor";
+import { autoLayoutDiff, statusPalette, toFlow, TopoCanvas, type LayoutDirection } from "@topox/editor";
 import {
   docFromYaml,
   docToYaml,
@@ -35,6 +36,17 @@ import { demoDoc } from "./demo.js";
 import { fetchDoc, parseDocSource, saveDocTo } from "./docsource.js";
 import { Dropdown } from "./Dropdown.js";
 import { Inspector } from "./Inspector.js";
+import {
+  createProject,
+  deleteProject,
+  getCurrentProjectId,
+  listProjects,
+  loadProjectDoc,
+  renameProject,
+  saveProjectDoc,
+  setCurrentProjectId,
+  type ProjectMeta,
+} from "./projects.js";
 import { simulateTick } from "./simulate.js";
 import { TimelineBar } from "./TimelineBar.js";
 
@@ -81,6 +93,26 @@ const styles = {
   },
 } as const;
 
+/** Node palette for the Insert menu. Types are opaque strings to the kernel. */
+const NODE_TYPES: { type: string; label: string }[] = [
+  { type: "net-router", label: "Router" },
+  { type: "net-switch", label: "Switch" },
+  { type: "net-firewall", label: "Firewall" },
+  { type: "net-server", label: "Server" },
+  { type: "net-database", label: "Database" },
+  { type: "net-cloud", label: "Cloud" },
+  { type: "net-cpe", label: "CPE" },
+  { type: "net-wifi", label: "WiFi" },
+  { type: "net-terminal", label: "Terminal" },
+];
+
+let idSeq = 0;
+function freshId(prefix: string, existing: Set<string>): string {
+  let id = `${prefix}-${Date.now().toString(36)}-${(idSeq += 1).toString(36)}`;
+  while (existing.has(id)) id = `${prefix}-${Date.now().toString(36)}-${(idSeq += 1).toString(36)}`;
+  return id;
+}
+
 function hasCompleteLayout(doc: TopoDoc): boolean {
   const layout = doc.views[0]?.layout ?? {};
   return doc.graph.nodes.every((node) => {
@@ -113,6 +145,7 @@ export function App() {
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "failed">("idle");
   const docSource = useMemo(() => parseDocSource(window.location.search), []);
   const [savedDoc, setSavedDoc] = useState<TopoDoc | null>(null);
+  const [project, setProject] = useState<ProjectMeta | null>(null);
   const timelineRef = useRef(new RuntimeTimeline({ checkpointInterval: 25 }));
   const runtimeRef = useRef(runtime);
   runtimeRef.current = runtime;
@@ -138,7 +171,8 @@ export function App() {
   const undo = useCallback(() => setDoc(history.undo()), [history]);
   const redo = useCallback(() => setDoc(history.redo()), [history]);
   const autoLayout = useCallback(
-    () => pushDiff(autoLayoutDiff(history.doc, viewId)),
+    (direction: LayoutDirection = "TB") =>
+      pushDiff(autoLayoutDiff(history.doc, viewId, { direction })),
     [history, pushDiff, viewId],
   );
 
@@ -161,6 +195,82 @@ export function App() {
       cancelled = true;
     };
   }, [docSource]);
+
+  // Local projects: restore the last-open project on startup (shared mode wins).
+  useEffect(() => {
+    if (docSource) return;
+    const id = getCurrentProjectId();
+    if (id === null) return;
+    const meta = listProjects().find((p) => p.id === id);
+    const stored = meta ? loadProjectDoc(id) : null;
+    if (!meta || !stored) return;
+    historyRef.current = new History(stored);
+    setDoc(stored);
+    setProject(meta);
+  }, [docSource]);
+
+  // Every accepted change is auto-persisted to the active project (debounced).
+  useEffect(() => {
+    if (!project || docSource) return;
+    const timer = setTimeout(() => saveProjectDoc(project.id, doc), 300);
+    return () => clearTimeout(timer);
+  }, [doc, docSource, project]);
+
+  const openProject = useCallback((meta: ProjectMeta) => {
+    const stored = loadProjectDoc(meta.id);
+    if (!stored) {
+      setError(`project "${meta.name}" could not be loaded`);
+      return;
+    }
+    historyRef.current = new History(stored);
+    setDoc(stored);
+    setProject(meta);
+    setCurrentProjectId(meta.id);
+    setError(null);
+  }, []);
+
+  const newProject = useCallback(() => {
+    const name = window.prompt("New project name:", "Untitled topology")?.trim();
+    if (!name) return;
+    const fresh = emptyDoc(`topo-${Date.now().toString(36)}`, name);
+    const meta = createProject(name, fresh);
+    historyRef.current = new History(fresh);
+    setDoc(fresh);
+    setProject(meta);
+    setCurrentProjectId(meta.id);
+    setError(null);
+  }, []);
+
+  const saveAsProject = useCallback(() => {
+    const current = historyRef.current.doc;
+    const name = window
+      .prompt("Save current diagram as project:", current.graph.meta?.name ?? "Untitled topology")
+      ?.trim();
+    if (!name) return;
+    const meta = createProject(name, current);
+    setProject(meta);
+    setCurrentProjectId(meta.id);
+    setError(null);
+  }, []);
+
+  const renameCurrentProject = useCallback(() => {
+    if (!project) return;
+    const name = window.prompt("Rename project:", project.name)?.trim();
+    if (!name || name === project.name) return;
+    renameProject(project.id, name);
+    setProject({ ...project, name });
+  }, [project]);
+
+  const deleteCurrentProject = useCallback(() => {
+    if (!project) return;
+    if (!window.confirm(`Delete project "${project.name}"? This cannot be undone.`)) return;
+    deleteProject(project.id);
+    setProject(null);
+    setCurrentProjectId(null);
+    const fresh = demoDoc();
+    historyRef.current = new History(fresh);
+    setDoc(fresh);
+  }, [project]);
 
   // Deep compare: undo back to the saved state must read as clean again.
   const dirty = useMemo(
@@ -412,6 +522,53 @@ export function App() {
     [doc.graph.edges, edgeSelection],
   );
 
+  const addNode = useCallback(
+    (type: string) => {
+      if (previewDoc !== null) return;
+      const current = history.doc;
+      const existing = new Set(current.graph.nodes.map((n) => n.id));
+      const id = freshId("n", existing);
+      const base = NODE_TYPES.find((t) => t.type === type)?.label ?? type;
+      const typeCount = current.graph.nodes.filter((n) => n.type === type).length;
+      const label = typeCount === 0 ? base : `${base} ${typeCount + 1}`;
+      // Place below the current diagram so new nodes never land on top of it.
+      const placed = toFlow(current, viewId).nodes;
+      const position =
+        placed.length === 0
+          ? { x: 80, y: 80 }
+          : {
+              x: Math.round(Math.min(...placed.map((n) => n.position.x))),
+              y: Math.round(Math.max(...placed.map((n) => n.position.y))) + 100,
+            };
+      const view = current.views.find((v) => v.id === viewId) ?? current.views[0];
+      const ops: DiffOp[] = [{ op: "add_node", node: { id, type, label } }];
+      if (view) {
+        ops.push({ op: "set_layout", viewId: view.id, nodeId: id, before: null, after: position });
+      }
+      pushDiff({ origin: "user", summary: `add ${type} "${label}"`, ops });
+    },
+    [history, previewDoc, pushDiff, viewId],
+  );
+
+  const addCustomNode = useCallback(() => {
+    const type = window.prompt("Node type (any string, e.g. net-router, k8s-pod):", "net-server")?.trim();
+    if (!type) return;
+    addNode(type);
+  }, [addNode]);
+
+  const connectSelected = useCallback(() => {
+    if (selection.length !== 2 || previewDoc !== null) return;
+    const [source, target] = selection as [string, string];
+    const existing = new Set(history.doc.graph.edges.map((e) => e.id));
+    pushDiff({
+      origin: "user",
+      summary: `connect ${source} -> ${target}`,
+      ops: [
+        { op: "add_edge", edge: { id: freshId("e", existing), source, target, directed: true } },
+      ],
+    });
+  }, [history, previewDoc, pushDiff, selection]);
+
   const duplicateSelected = useCallback(() => {
     if (selection.length === 0 || previewDoc !== null) return;
     const positions: Record<string, NodeLayout> = {};
@@ -563,6 +720,33 @@ export function App() {
     <div style={styles.root}>
       <div style={styles.topbar}>
         <span style={styles.brand}>TopoX Studio</span>
+        {docSource ? null : (
+          <Dropdown
+            label={
+              project
+                ? project.name.length > 20
+                  ? `${project.name.slice(0, 19)}…`
+                  : project.name
+                : "Projects"
+            }
+            buttonStyle={styles.btn}
+            items={[
+              { label: "New project…", hint: "blank canvas", onSelect: newProject },
+              ...(project === null
+                ? [{ label: "Save as project…", hint: "keep this diagram", onSelect: saveAsProject }]
+                : [
+                    { label: "Rename project…", onSelect: renameCurrentProject },
+                    { label: "Delete project", hint: "back to demo", onSelect: deleteCurrentProject },
+                  ]),
+              ...listProjects().map((meta) => ({
+                label: meta.id === project?.id ? `● ${meta.name}` : meta.name,
+                hint: new Date(meta.updatedAt).toLocaleDateString(),
+                disabled: meta.id === project?.id,
+                onSelect: () => openProject(meta),
+              })),
+            ]}
+          />
+        )}
         <button style={styles.tab(tab === "canvas")} onClick={() => setTab("canvas")}>Canvas</button>
         <button style={styles.tab(tab === "inventory")} onClick={() => setTab("inventory")}>Inventory</button>
         <button style={styles.tab(tab === "json")} onClick={() => setTab("json")}>JSON</button>
@@ -598,10 +782,37 @@ export function App() {
           ]}
         />
         <Dropdown
+          label="Insert"
+          buttonStyle={styles.btn}
+          items={[
+            ...NODE_TYPES.map((t) => ({
+              label: t.label,
+              hint: t.type,
+              disabled: previewDoc !== null,
+              onSelect: () => addNode(t.type),
+            })),
+            {
+              label: "Custom type…",
+              hint: "any type string",
+              disabled: previewDoc !== null,
+              onSelect: addCustomNode,
+            },
+          ]}
+        />
+        <Dropdown
           label="Arrange"
           buttonStyle={styles.btn}
           items={[
-            { label: "Auto layout", hint: "dagre TB", onSelect: autoLayout },
+            { label: "Auto layout ↓", hint: "top → bottom", onSelect: () => autoLayout("TB") },
+            { label: "Auto layout →", hint: "left → right", onSelect: () => autoLayout("LR") },
+            { label: "Auto layout ↑", hint: "bottom → top", onSelect: () => autoLayout("BT") },
+            { label: "Auto layout ←", hint: "right → left", onSelect: () => autoLayout("RL") },
+            {
+              label: "Connect selection",
+              hint: "2 nodes → edge",
+              disabled: selection.length !== 2 || previewDoc !== null,
+              onSelect: connectSelected,
+            },
             {
               label: "Duplicate selection",
               hint: "⌘/Ctrl+D",

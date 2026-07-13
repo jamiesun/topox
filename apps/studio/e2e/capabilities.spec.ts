@@ -75,7 +75,7 @@ test("auto layout changes node coordinates and undo restores them", async ({ pag
   expect(await historyCount(page)).toBe(0);
 
   await page.getByRole("button", { name: "Arrange ▾" }).click();
-  await page.getByRole("menuitem", { name: /Auto layout/ }).click();
+  await page.getByRole("menuitem", { name: "Auto layout ↓" }).click();
   await expect.poll(() => nodeTransforms(nodes)).not.toEqual(before);
   expect(await historyCount(page)).toBe(1);
 

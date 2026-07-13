@@ -11,7 +11,7 @@ export {
   type TopoRFNode,
   type SearchProjection,
 } from "./convert.js";
-export { autoLayoutDiff, type AutoLayoutOptions } from "./layout.js";
+export { autoLayoutDiff, type AutoLayoutOptions, type LayoutDirection } from "./layout.js";
 export {
   snapToAlignment,
   type AlignmentBox,

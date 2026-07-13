@@ -49,7 +49,7 @@ async function mockDocEndpoint(
 
 async function makeDirty(page: Page) {
   await page.getByRole("button", { name: "Arrange ▾" }).click();
-  await page.getByRole("menuitem", { name: /Auto layout/ }).click();
+  await page.getByRole("menuitem", { name: "Auto layout ↓" }).click();
 }
 
 test("loads ?src doc, saves layout via PUT, returns to Saved", async ({ page }) => {

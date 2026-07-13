@@ -82,11 +82,11 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 
 - **React Flow 编辑器（受控视图）**
 
-  doc 进、diff 出；拖拽走本地状态松手一次提交；dagre 自动布局以 diff 形式产出；组可视化（展开=派生包围盒容器、折叠=代理节点、跨边界边重定向合并、嵌套父盖子）。证据：`packages/editor/src/{TopoCanvas,convert,layout}.tsx|ts`，`packages/editor/tests/editor.test.ts`（group projection 等）。
+  doc 进、diff 出；拖拽走本地状态松手一次提交；节点四边均有连接点（Loose 模式，任意边可发起/接受连线），边自动锚定到朝向对端的一侧；dagre 自动布局以 diff 形式产出；组可视化（展开=派生包围盒容器、折叠=代理节点、跨边界边重定向合并、嵌套父盖子）。证据：`packages/editor/src/{TopoCanvas,convert,layout}.tsx|ts`，`packages/editor/tests/editor.test.ts`（group projection、edge handle sides 等）。
 
 - **编辑手感**
 
-  选中节点可通过 Arrange 或 Cmd/Ctrl+D 复制，副本保留属性和分组并偏移落位；Inspector 可锁定节点，锁定节点仍可选择但不会单独或随多选拖动；拖动接近其它节点边缘/中线时显示参考线并吸附。复制、锁定和最终布局均只通过可逆 GraphDiff 进入 History。证据：`packages/core/src/editing.ts`；`packages/editor/src/{alignment,convert,TopoCanvas}.ts|tsx`；`apps/studio/e2e/edit.spec.ts`。
+  工具栏 Insert 菜单可按类型直接创建节点（含自定义类型），落位在现有图之下并写入 View 布局；选中两个节点后 Arrange → Connect selection 一键连线（画布上从节点锚点拖拽连线同样可用）；选中节点可通过 Arrange 或 Cmd/Ctrl+D 复制，副本保留属性和分组并偏移落位；Inspector 可锁定节点，锁定节点仍可选择但不会单独或随多选拖动；拖动接近其它节点边缘/中线时显示参考线并吸附。创建、连线、复制、锁定和最终布局均只通过可逆 GraphDiff 进入 History。证据：`packages/core/src/editing.ts`；`packages/editor/src/{alignment,convert,TopoCanvas}.ts|tsx`；`apps/studio/src/App.tsx`；`apps/studio/e2e/edit.spec.ts`。
 
 - **DSL 编译器（AI 输出格式）**
 
@@ -180,7 +180,7 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 
 | 一级功能 | 风险级别 | Happy Path E2E | 失败路径 | 权限角色覆盖 | 失败恢复/回滚 | 证据（测试路径/用例） |
 | --- | --- | --- | --- | --- | --- | --- |
-| 图编辑（节点/边增删改、移动、连线） | 中 | ✅ Inspector 改 label→画布更新 | ✅ diff 冲突拒绝 | 不适用 | ✅ UI 级 undo 还原已验证 | `apps/studio/e2e/edit.spec.ts`；内核层 `packages/core/tests/core.test.ts` applyDiff/invertDiff/History |
+| 图编辑（节点/边增删改、移动、连线） | 中 | ✅ Insert 菜单建节点 + Connect selection 连线→undo 逐步还原；Inspector 改 label→画布更新 | ✅ diff 冲突拒绝 | 不适用 | ✅ UI 级 undo 还原已验证 | `apps/studio/e2e/edit.spec.ts`；内核层 `packages/core/tests/core.test.ts` applyDiff/invertDiff/History |
 | 编辑手感（复制/锁定/对齐吸附） | 中 | ✅ Arrange/快捷键复制；Inspector 锁定；拖动吸附并显示参考线 | ✅ 锁定节点单独或随多选拖动均保持原位 | 不适用 | ✅ 复制、锁定和吸附布局均有 UI 级 undo | `apps/studio/e2e/edit.spec.ts`；`packages/core/tests/core.test.ts` makeDuplicateNodes；`packages/editor/tests/editor.test.ts` lock/alignment projection |
 | 撤销/重做 | 中 | ✅ 编辑后 ↩ 还原（UI 级） | ✅ 空栈边界 | 不适用 | ✅ 本身即回滚机制 | `apps/studio/e2e/edit.spec.ts`；`packages/core/tests/core.test.ts` History |
 | 分组（创建/解组/折叠/展开/嵌套） | 中 | ✅ UI 级创建→折叠→展开→解组 | ✅ 组循环/多父校验 | 不适用 | ✅ UI 级 undo 恢复解组 | `apps/studio/e2e/capabilities.spec.ts`；`packages/editor/tests/editor.test.ts` group projection；`packages/core/tests/core.test.ts` validate |
@@ -193,10 +193,11 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 | 运行态快照（保存/加载） | 中 | ✅ Simulate→保存→刷新→加载→回放/逐帧 | ✅ 未知版本拒绝且当前回放、文档、History 不变 | 不适用 | ✅ 加载先校验后原子替换 | `apps/studio/e2e/snapshot.spec.ts`；`packages/core/tests/core.test.ts` runtime snapshots |
 | Inspector 属性编辑（基础/attrs/JSON） | 中 | ✅ label 编辑贯穿 UI（attrs/JSON 编辑待补） | 待核验（JSON 编辑的 id 不变/端点校验在 `apps/studio/src/Inspector.tsx`，无测试） | 不适用 | ✅ 编辑走 update diff，UI 级 undo 已验证 | `apps/studio/e2e/edit.spec.ts`；内核层 `core.test.ts` makeNodeUpdate |
 | 搜索（名称/标签/类型/属性） | 低 | ✅ UI 级高亮/弱化 + 前后结果定位 + Inventory 过滤 | 不适用（只读过滤） | 不适用 | 不适用（只读，History 保持不变） | `apps/studio/e2e/capabilities.spec.ts`；`packages/editor/tests/editor.test.ts` search projection；`packages/core/tests/core.test.ts` searchNodes 断言 |
-| 自动布局（dagre） | 中 | ✅ UI 级坐标变化 | 待核验 | 不适用 | ✅ UI 级 undo 恢复原坐标 | `apps/studio/e2e/capabilities.spec.ts`；`packages/editor/tests/editor.test.ts` autoLayoutDiff（含幂等性） |
+| 自动布局（dagre，四方向 TB/BT/LR/RL） | 中 | ✅ UI 级坐标变化（Arrange 菜单按方向触发） | 待核验 | 不适用 | ✅ UI 级 undo 恢复原坐标 | `apps/studio/e2e/capabilities.spec.ts`；`packages/editor/tests/editor.test.ts` autoLayoutDiff（含幂等性与方向断言） |
 | SSE / WebSocket 运行态接入 | 中 | ✅ 原生 WS demo→embed 状态/指标叠加；两传输单测覆盖 snapshot→patch | ✅ 畸形消息 onError 后继续流；WS 断线退避重连 | 不适用 | ✅ close 幂等并取消重连；切换传输关闭前一连接 | `apps/studio/e2e/embed.spec.ts`；`packages/core/tests/{sse,websocket}.test.ts` |
 | 嵌入挂载（mountTopoView） | 中 | ✅ 纯 HTML 宿主挂载 + pushRuntimeEvent + destroy | 待核验 | 不适用 | ✅ destroy 清空挂载点；编辑走同一 diff/undo 管线 | `apps/studio/e2e/embed.spec.ts`；`examples/embed-plain/` |
 | 共享 Studio 文档源（src/save/ret） | 高（PUT 覆盖宿主文档） | ✅ ?src 加载→编辑→PUT→Saved 闭环（PUT body 契约断言） | ✅ 加载 404 回退 demo 并报错（UI 级）；PUT 500 报错可重试 | 待核验（依赖宿主端点鉴权，同域 cookie 透传） | ✅ PUT 失败本地编辑完好、重试后成功（UI 级）；未保存改动有离开警告 | `apps/studio/e2e/sharedstudio.spec.ts` |
+| 本地项目管理（新建/切换/重命名/删除/自动保存） | 中（localStorage 持久化，删除不可撤销） | ✅ 保存为项目→编辑→刷新后恢复；新建空白项目并切换 | ✅ 损坏存储条目读为 null 安全跳过（代码级防御）；删除需确认 | 不适用 | ✅ 删除后回退 demo 文档且索引清空；?src 共享模式完全绕过本地项目 | `apps/studio/e2e/projects.spec.ts`；`apps/studio/src/projects.ts` |
 
 覆盖现状：
 

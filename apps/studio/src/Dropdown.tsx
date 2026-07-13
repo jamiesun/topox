@@ -80,9 +80,9 @@ export function Dropdown({
       </button>
       {open ? (
         <div style={menuStyles.menu} role="menu">
-          {items.map((item) => (
+          {items.map((item, index) => (
             <button
-              key={item.label}
+              key={`${index}-${item.label}`}
               role="menuitem"
               disabled={item.disabled ?? false}
               style={{

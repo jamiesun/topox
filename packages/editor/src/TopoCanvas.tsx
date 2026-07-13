@@ -13,6 +13,7 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
   Background,
+  ConnectionMode,
   Controls,
   MiniMap,
   ReactFlow,
@@ -78,6 +79,19 @@ const typePalette: Record<string, string> = {
   "net-terminal": "#334155",
 };
 
+/**
+ * One connection point per side. Loose connection mode lets any of them act
+ * as source or target, and edges pick the side facing the other endpoint.
+ */
+const sideHandles = (
+  <>
+    <Handle id="top" type="source" position={Position.Top} style={{ opacity: 0.4 }} />
+    <Handle id="bottom" type="source" position={Position.Bottom} style={{ opacity: 0.4 }} />
+    <Handle id="left" type="source" position={Position.Left} style={{ opacity: 0.4 }} />
+    <Handle id="right" type="source" position={Position.Right} style={{ opacity: 0.4 }} />
+  </>
+);
+
 const TopoNode = memo(function TopoNode({ data, selected }: NodeProps<TopoRFNode>) {
   const d = data as TopoNodeData;
   const accent = typePalette[d.nodeType] ?? "#475569";
@@ -121,7 +135,7 @@ const TopoNode = memo(function TopoNode({ data, selected }: NodeProps<TopoRFNode
         transition: "opacity 160ms ease, box-shadow 160ms ease, background 160ms ease",
       }}
     >
-      <Handle type="target" position={Position.Top} style={{ opacity: 0.4 }} />
+      {sideHandles}
       {statusColor !== undefined ? (
         <span
           title={`${d.status}${d.message !== undefined ? `: ${d.message}` : ""}`}
@@ -165,7 +179,6 @@ const TopoNode = memo(function TopoNode({ data, selected }: NodeProps<TopoRFNode
           {formatMetrics(d.metrics)}
         </div>
       ) : null}
-      <Handle type="source" position={Position.Bottom} style={{ opacity: 0.4 }} />
     </div>
   );
 });
@@ -279,7 +292,7 @@ const TopoGroupNode = memo(function TopoGroupNode({ data, selected }: NodeProps<
         transition: "opacity 160ms ease, box-shadow 160ms ease, background 160ms ease",
       }}
     >
-      <Handle type="target" position={Position.Top} style={{ opacity: 0.4 }} />
+      {sideHandles}
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         {!readOnly ? (
           <button
@@ -317,7 +330,6 @@ const TopoGroupNode = memo(function TopoGroupNode({ data, selected }: NodeProps<
           </span>
         ) : null}
       </div>
-      <Handle type="source" position={Position.Bottom} style={{ opacity: 0.4 }} />
     </div>
   );
 });
@@ -717,6 +729,7 @@ export function TopoCanvas({
         onInit={handleInit}
         nodesDraggable={!readOnly}
         nodesConnectable={!readOnly}
+        connectionMode={ConnectionMode.Loose}
         elementsSelectable
         multiSelectionKeyCode={["Meta", "Control", "Shift"]}
         fitView

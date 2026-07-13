@@ -27,6 +27,51 @@ test("edit node label via Inspector, then undo", async ({ page }) => {
   expect(await historyCount(page)).toBe(0);
 });
 
+test("insert nodes from the Insert menu, connect them, then undo", async ({ page }) => {
+  await page.goto("/");
+  await waitForCanvas(page);
+
+  const inserted = page.locator('.react-flow__node[data-id^="n-"]');
+  const edges = page.locator(".react-flow__edge");
+  const edgeCountBefore = await edges.count();
+
+  await page.getByRole("button", { name: "Insert ▾" }).click();
+  await page.getByRole("menuitem", { name: "Router", exact: false }).first().click();
+  await expect(inserted).toHaveCount(1);
+  await expect(inserted.first()).toContainText("net-router");
+  expect(await historyCount(page)).toBe(1);
+
+  await page.getByRole("button", { name: "Insert ▾" }).click();
+  await page.getByRole("menuitem", { name: "Switch", exact: false }).first().click();
+  await expect(inserted).toHaveCount(2);
+  expect(await historyCount(page)).toBe(2);
+
+  // Bring the freshly inserted nodes into view before selecting them. The
+  // fit-view transition animates the viewport, so retry until the click lands.
+  await page.locator(".react-flow__controls-fitview").click();
+  await expect(async () => {
+    await inserted.nth(0).click();
+    await expect(inserted.nth(0)).toHaveClass(/selected/, { timeout: 500 });
+  }).toPass();
+  await expect(async () => {
+    await inserted.nth(1).click({ modifiers: ["Meta"] });
+    await expect(page.getByText("2 items selected")).toBeVisible({ timeout: 500 });
+  }).toPass();
+
+  await page.getByRole("button", { name: "Arrange ▾" }).click();
+  await page.getByRole("menuitem", { name: /Connect selection/ }).click();
+  await expect(edges).toHaveCount(edgeCountBefore + 1);
+  expect(await historyCount(page)).toBe(3);
+
+  // Undo unwinds the edge, then each inserted node.
+  await page.getByRole("button", { name: "↩" }).click();
+  await expect(edges).toHaveCount(edgeCountBefore);
+  await page.getByRole("button", { name: "↩" }).click();
+  await page.getByRole("button", { name: "↩" }).click();
+  await expect(inserted).toHaveCount(0);
+  expect(await historyCount(page)).toBe(0);
+});
+
 test("duplicate selection from Arrange or shortcut, then undo", async ({ page }) => {
   await page.goto("/");
   await waitForCanvas(page);

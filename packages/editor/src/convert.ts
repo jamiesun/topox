@@ -147,6 +147,23 @@ export function transitiveNodeMembers(graph: Graph, groupId: string): string[] {
   return out;
 }
 
+/** Handle ids rendered on all four sides of nodes and proxies. */
+export type HandleSide = "top" | "bottom" | "left" | "right";
+
+/** Pick the visually shortest pair of sides for an edge between two boxes. */
+function pickHandles(source: Box, target: Box): { sourceHandle: HandleSide; targetHandle: HandleSide } {
+  const dx = target.x + target.width / 2 - (source.x + source.width / 2);
+  const dy = target.y + target.height / 2 - (source.y + source.height / 2);
+  if (Math.abs(dx) > Math.abs(dy)) {
+    return dx > 0
+      ? { sourceHandle: "right", targetHandle: "left" }
+      : { sourceHandle: "left", targetHandle: "right" };
+  }
+  return dy > 0
+    ? { sourceHandle: "bottom", targetHandle: "top" }
+    : { sourceHandle: "top", targetHandle: "bottom" };
+}
+
 /** Projects graph + view (+ optional runtime overlay) into React Flow shapes. Pure. */
 export function toFlow(
   doc: TopoDoc,
@@ -349,6 +366,18 @@ export function toFlow(
     { count: number; active: boolean; directed: boolean; source: string; target: string }
   >();
 
+  // Every visible endpoint (node or proxy) has a box; edges anchor to the
+  // side facing the other endpoint so links approach from the natural side.
+  const endpointBox = (flowId: string): Box | undefined => {
+    const gid = flowIdToGroupId(flowId);
+    return gid !== null ? proxyBox.get(gid) : nodeBox.get(flowId);
+  };
+  const handlesFor = (source: string, target: string) => {
+    const sourceBox = endpointBox(source);
+    const targetBox = endpointBox(target);
+    return sourceBox && targetBox ? pickHandles(sourceBox, targetBox) : {};
+  };
+
   for (const edge of graph.edges) {
     const srcProxy = nodeProxy.get(edge.source);
     const dstProxy = nodeProxy.get(edge.target);
@@ -364,6 +393,7 @@ export function toFlow(
         id: edge.id,
         source,
         target,
+        ...handlesFor(source, target),
         ...(label !== undefined ? { label } : {}),
         ...(edge.directed ? { markerEnd: "url(#topox-arrow)" } : {}),
         ...(rt?.active === true ? { animated: true } : {}),
@@ -396,6 +426,7 @@ export function toFlow(
       id: `proxy-edge:${key}`,
       source: m.source,
       target: m.target,
+      ...handlesFor(m.source, m.target),
       ...(m.count > 1 ? { label: `${m.count}×` } : {}),
       ...(m.directed ? { markerEnd: "url(#topox-arrow)" } : {}),
       ...(m.active ? { animated: true } : {}),

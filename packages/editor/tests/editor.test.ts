@@ -37,6 +37,19 @@ describe("autoLayoutDiff", () => {
     const again = autoLayoutDiff(once, "default");
     expect(again.ops).toHaveLength(0);
   });
+
+  it("lays out along the requested direction", () => {
+    const doc = chainDoc();
+    const lr = applyDiff(doc, autoLayoutDiff(doc, "default", { direction: "LR" })).views[0]!.layout;
+    expect(lr["a"]!.x).toBeLessThan(lr["b"]!.x);
+    expect(lr["b"]!.x).toBeLessThan(lr["c"]!.x);
+    const bt = applyDiff(doc, autoLayoutDiff(doc, "default", { direction: "BT" })).views[0]!.layout;
+    expect(bt["a"]!.y).toBeGreaterThan(bt["b"]!.y);
+    expect(bt["b"]!.y).toBeGreaterThan(bt["c"]!.y);
+    const rl = applyDiff(doc, autoLayoutDiff(doc, "default", { direction: "RL" })).views[0]!.layout;
+    expect(rl["a"]!.x).toBeGreaterThan(rl["b"]!.x);
+    expect(rl["b"]!.x).toBeGreaterThan(rl["c"]!.x);
+  });
 });
 
 describe("snapToAlignment", () => {
@@ -79,6 +92,32 @@ describe("toFlow", () => {
     expect(b.position.x).toBeGreaterThanOrEqual(0);
     expect(edges).toHaveLength(2);
     expect(edges[0]).toMatchObject({ source: "a", target: "b" });
+  });
+
+  it("anchors edges to the side facing the other endpoint", () => {
+    const place = (nodeId: string, x: number, y: number) =>
+      ({ op: "set_layout", viewId: "default", nodeId, before: null, after: { x, y, width: 100, height: 50 } }) as const;
+    // a → b is mostly horizontal (b to the right); b → c mostly vertical (c below).
+    const doc = applyDiff(chainDoc(), {
+      ops: [place("a", 0, 0), place("b", 400, 30), place("c", 420, 400)],
+    });
+    const { edges } = toFlow(doc, "default");
+    expect(edges.find((e) => e.id === "e1")).toMatchObject({
+      sourceHandle: "right",
+      targetHandle: "left",
+    });
+    expect(edges.find((e) => e.id === "e2")).toMatchObject({
+      sourceHandle: "bottom",
+      targetHandle: "top",
+    });
+    // Mirror: a placed right of b flips the horizontal pair.
+    const flipped = applyDiff(chainDoc(), {
+      ops: [place("a", 800, 0), place("b", 0, 30), place("c", 0, 60)],
+    });
+    expect(toFlow(flipped, "default").edges.find((e) => e.id === "e1")).toMatchObject({
+      sourceHandle: "left",
+      targetHandle: "right",
+    });
   });
 
   it("projects search matches, the current result, and dimmed nonmatches", () => {
