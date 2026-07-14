@@ -24,8 +24,8 @@ const fmt = (ts: number) =>
   new Date(ts).toLocaleTimeString(undefined, { hour12: false });
 
 const btn: CSSProperties = {
-  border: "1px solid #d0d7de",
-  background: "#fff",
+  border: "1px solid var(--border)",
+  background: "var(--surface)",
   borderRadius: 6,
   padding: "3px 10px",
   fontSize: 12,
@@ -57,8 +57,8 @@ export function TimelineBar({
         display: "flex",
         alignItems: "center",
         gap: 10,
-        background: "#ffffffee",
-        border: "1px solid #e2e8f0",
+        background: "var(--surface)", opacity: 0.97,
+        border: "1px solid var(--border)",
         borderRadius: 10,
         padding: "8px 12px",
         boxShadow: "0 4px 14px rgba(15,23,42,.08)",
@@ -78,13 +78,13 @@ export function TimelineBar({
       <button
         style={{
           ...btn,
-          ...(live ? { background: "#16a34a", borderColor: "#16a34a", color: "#fff" } : {}),
+          ...(live ? { background: "var(--ok)", borderColor: "var(--ok)", color: "var(--inverse-text)" } : {}),
         }}
         onClick={onLive}
       >
         Live
       </button>
-      <span style={{ color: "#64748b", fontVariantNumeric: "tabular-nums" }}>{fmt(range.start)}</span>
+      <span style={{ color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{fmt(range.start)}</span>
       <input
         type="range"
         min={range.start}
@@ -92,16 +92,16 @@ export function TimelineBar({
         step={100}
         value={value}
         onChange={(e) => onSeek(Number(e.target.value))}
-        style={{ flex: 1, accentColor: live ? "#16a34a" : "#2563eb" }}
+        style={{ flex: 1, accentColor: live ? "var(--ok)" : "var(--accent)" }}
       />
-      <span style={{ color: "#64748b", fontVariantNumeric: "tabular-nums" }}>{fmt(range.end)}</span>
+      <span style={{ color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{fmt(range.end)}</span>
       <span
         style={{
           minWidth: 118,
           textAlign: "right",
           fontVariantNumeric: "tabular-nums",
           fontWeight: 600,
-          color: live ? "#16a34a" : "#2563eb",
+          color: live ? "var(--ok)" : "var(--accent)",
         }}
       >
         {live ? "LIVE" : `REPLAY ${fmt(value)}`}

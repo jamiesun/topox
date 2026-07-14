@@ -90,7 +90,9 @@ export function toMermaid(doc: TopoDoc, options: MermaidExportOptions = {}): str
   }
 
   for (const e of graph.edges) {
-    const arrow = e.directed === true ? "-->" : "---";
+    // Mermaid has no reversed-only arrow syntax; "backward" degrades to a
+    // plain forward arrow (lossy, same as other unsupported Mermaid gaps).
+    const arrow = e.directed !== true ? "---" : e.arrow === "both" ? "<-->" : "-->";
     const label = e.label !== undefined && e.label !== "" ? `|${escPipe(e.label)}|` : "";
     lines.push(`  ${mid(e.source)} ${arrow}${label} ${mid(e.target)}`);
   }
@@ -272,8 +274,7 @@ export function parseMermaid(text: string): MermaidParseResult {
         const arrow = parts[p - 2] ?? "---";
         const label = parts[p - 1];
         const bidirectional = arrow.startsWith("<");
-        const directed = !bidirectional && arrow.includes(">");
-        if (bidirectional) warnings.push(`line ${i + 1}: "<-->" imported as undirected`);
+        const directed = bidirectional || arrow.includes(">");
         if (/--[xo]$/.test(arrow)) warnings.push(`line ${i + 1}: "${arrow}" end style dropped`);
         for (const s of previous) {
           for (const t of segIds) {
@@ -282,6 +283,7 @@ export function parseMermaid(text: string): MermaidParseResult {
               source: s,
               target: t,
               ...(directed || /--[xo]$/.test(arrow) ? { directed: true } : {}),
+              ...(bidirectional ? { arrow: "both" } : {}),
               ...(label !== undefined && label.trim() !== "" ? { label: unescLabel(label) } : {}),
             });
           }

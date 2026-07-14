@@ -83,6 +83,38 @@ set edge e1 label=sql weight=3`,
     expect(next.graph.edges[0]).toMatchObject({ label: "sql", weight: 3 });
   });
 
+  it("edge arrow direction: set at creation and updated via `set edge`", () => {
+    const doc = base();
+    const { diff, errors } = compileDsl(
+      `node x "X" type=net-cpe
+edge db -> x arrow=backward`,
+      doc,
+    );
+    expect(errors).toEqual([]);
+    const next = applyDiff(doc, diff);
+    expect(next.graph.edges[1]).toMatchObject({ source: "db", target: "x", directed: true, arrow: "backward" });
+
+    // set edge can change arrow direction and clear it back to default forward.
+    const { diff: setDiff, errors: setErrors } = compileDsl("set edge e1 arrow=both", next);
+    expect(setErrors).toEqual([]);
+    const withBoth = applyDiff(next, setDiff);
+    expect(withBoth.graph.edges[0]).toMatchObject({ directed: true, arrow: "both" });
+
+    const { diff: clearDiff } = compileDsl("set edge e1 arrow=null", withBoth);
+    const cleared = applyDiff(withBoth, clearDiff);
+    expect(cleared.graph.edges[0]!.arrow).toBeUndefined();
+
+    // Invalid values are ignored rather than stored.
+    const { diff: badDiff, errors: badErrors } = compileDsl(
+      `node y "Y" type=net-cpe
+edge db -> y arrow=sideways`,
+      next,
+    );
+    expect(badErrors).toEqual([]);
+    const badApplied = applyDiff(next, badDiff);
+    expect(badApplied.graph.edges.at(-1)!.arrow).toBeUndefined();
+  });
+
   it("remove node cascades edges, group membership and layouts, undoably", () => {
     const doc = applyDiff(base(), {
       ops: [

@@ -122,6 +122,7 @@ test("search highlights canvas matches, navigates results, and remains read-only
   await page.getByRole("button", { name: "Inventory", exact: true }).click();
   const rows = page.locator("tbody tr");
   await expect(rows).toHaveCount(1);
-  await expect(rows.first()).toContainText("PostgreSQL");
+  await expect(rows.first()).toContainText("db"); // id cell stays plain text
+  await expect(rows.first().locator("input").nth(1)).toHaveValue("PostgreSQL"); // label cell is editable
   expect(await historyCount(page)).toBe(0);
 });

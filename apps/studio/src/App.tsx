@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DiffOp, GraphDiff, NodeLayout, RuntimeState, TopoDoc } from "@topox/core";
+import type { DiffOp, GraphDiff, Node, NodeLayout, RuntimeState, TopoDoc } from "@topox/core";
 import {
   applyDiff,
   applyRuntimeEvent,
@@ -10,6 +10,8 @@ import {
   makeDuplicateNodes,
   makeGroupOps,
   makeGroupUpdate,
+  makeNodeUpdate,
+  makeRemoveOps,
   makeUngroupOps,
   parseRuntimeSnapshot,
   resolveRuntime,
@@ -35,6 +37,8 @@ import { AiPanel } from "./AiPanel.js";
 import { demoDoc } from "./demo.js";
 import { fetchDoc, parseDocSource, saveDocTo } from "./docsource.js";
 import { Dropdown } from "./Dropdown.js";
+import { IconPickerDialog, typeLabel } from "./IconPicker.js";
+import { useTheme } from "./theme.js";
 import { Inspector } from "./Inspector.js";
 import {
   createProject,
@@ -59,20 +63,20 @@ const styles = {
     flexDirection: "column" as const,
     height: "100vh",
     fontFamily: "ui-sans-serif, system-ui, sans-serif",
-    color: "#1f2d3d",
+    color: "var(--text)",
   },
   topbar: {
     display: "flex",
     alignItems: "center",
     gap: 8,
     padding: "8px 14px",
-    borderBottom: "1px solid #e2e8f0",
-    background: "#fff",
+    borderBottom: "1px solid var(--border)",
+    background: "var(--surface)",
   },
   brand: { fontWeight: 700, fontSize: 15, marginRight: 12 },
   btn: {
-    border: "1px solid #d0d7de",
-    background: "#fff",
+    border: "1px solid var(--border)",
+    background: "var(--surface)",
     borderRadius: 6,
     padding: "5px 10px",
     fontSize: 12.5,
@@ -80,37 +84,82 @@ const styles = {
   },
   tab: (active: boolean) => ({
     ...styles.btn,
-    ...(active ? { background: "#1f2d3d", color: "#fff", borderColor: "#1f2d3d" } : {}),
+    ...(active ? { background: "var(--inverse-bg)", color: "var(--inverse-text)", borderColor: "var(--inverse-bg)" } : {}),
   }),
   main: { display: "flex", flex: 1, minHeight: 0 },
   side: {
     width: 300,
-    borderLeft: "1px solid #e2e8f0",
-    background: "#fafbfc",
+    borderLeft: "1px solid var(--border)",
+    background: "var(--surface-2)",
     overflow: "auto" as const,
     padding: 12,
     fontSize: 12.5,
   },
 } as const;
 
-/** Node palette for the Insert menu. Types are opaque strings to the kernel. */
-const NODE_TYPES: { type: string; label: string }[] = [
-  { type: "net-router", label: "Router" },
-  { type: "net-switch", label: "Switch" },
-  { type: "net-firewall", label: "Firewall" },
-  { type: "net-server", label: "Server" },
-  { type: "net-database", label: "Database" },
-  { type: "net-cloud", label: "Cloud" },
-  { type: "net-cpe", label: "CPE" },
-  { type: "net-wifi", label: "WiFi" },
-  { type: "net-terminal", label: "Terminal" },
-];
-
 let idSeq = 0;
 function freshId(prefix: string, existing: Set<string>): string {
   let id = `${prefix}-${Date.now().toString(36)}-${(idSeq += 1).toString(36)}`;
   while (existing.has(id)) id = `${prefix}-${Date.now().toString(36)}-${(idSeq += 1).toString(36)}`;
   return id;
+}
+
+const invCell = {
+  padding: "3px 6px",
+  borderBottom: "1px solid var(--border-soft)",
+} as const;
+
+/**
+ * Borderless in-place cell editor for the inventory table. Commits on blur or
+ * Enter — one invertible diff per edit, same as the Inspector fields.
+ */
+function InventoryCell({
+  value,
+  onCommit,
+  mono = false,
+  bold = false,
+  disabled = false,
+}: {
+  value: string;
+  onCommit: (next: string) => void;
+  mono?: boolean;
+  bold?: boolean;
+  disabled?: boolean;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  return (
+    <input
+      value={draft}
+      disabled={disabled}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={(e) => {
+        e.target.style.borderColor = "transparent";
+        e.target.style.background = "transparent";
+        if (draft !== value) onCommit(draft);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Escape") setDraft(value);
+      }}
+      style={{
+        width: "100%",
+        boxSizing: "border-box",
+        border: "1px solid transparent",
+        borderRadius: 4,
+        padding: "3px 4px",
+        fontSize: 12.5,
+        background: "transparent",
+        color: "inherit",
+        fontFamily: mono ? "ui-monospace, monospace" : "inherit",
+        fontWeight: bold ? 600 : 400,
+      }}
+      onFocus={(e) => {
+        e.target.style.borderColor = "var(--accent)";
+        e.target.style.background = "var(--surface)";
+      }}
+    />
+  );
 }
 
 function hasCompleteLayout(doc: TopoDoc): boolean {
@@ -127,6 +176,7 @@ function withAutoLayout(doc: TopoDoc): TopoDoc {
 
 export function App() {
   const historyRef = useRef(new History(demoDoc()));
+  const theme = useTheme();
   const [doc, setDoc] = useState<TopoDoc>(historyRef.current.doc);
   const [tab, setTab] = useState<Tab>("canvas");
   const [sideTab, setSideTab] = useState<SideTab>("inspect");
@@ -137,12 +187,14 @@ export function App() {
   const [edgeSelection, setEdgeSelection] = useState<string[]>([]);
   const [groupSelection, setGroupSelection] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [insertOpen, setInsertOpen] = useState(false);
   const [runtime, setRuntime] = useState<RuntimeState>(emptyRuntime());
   const [simulating, setSimulating] = useState(false);
   const [replayTs, setReplayTs] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [timelineRevision, setTimelineRevision] = useState(0);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "failed">("idle");
+  const [localSaveTick, setLocalSaveTick] = useState<"dirty" | "saved" | null>(null);
   const docSource = useMemo(() => parseDocSource(window.location.search), []);
   const [savedDoc, setSavedDoc] = useState<TopoDoc | null>(null);
   const [project, setProject] = useState<ProjectMeta | null>(null);
@@ -212,7 +264,11 @@ export function App() {
   // Every accepted change is auto-persisted to the active project (debounced).
   useEffect(() => {
     if (!project || docSource) return;
-    const timer = setTimeout(() => saveProjectDoc(project.id, doc), 300);
+    setLocalSaveTick("dirty");
+    const timer = setTimeout(() => {
+      saveProjectDoc(project.id, doc);
+      setLocalSaveTick("saved");
+    }, 300);
     return () => clearTimeout(timer);
   }, [doc, docSource, project]);
 
@@ -476,6 +532,30 @@ export function App() {
 
   const discardStaged = useCallback(() => setDsl(""), []);
   const inventory = useMemo(() => toInventory(doc.graph), [doc.graph]);
+
+  /** Inline inventory edit: one update_node diff per committed cell. */
+  const editNodeField = useCallback(
+    (nodeId: string, field: "label" | "type" | "ref" | "tags" | "description", raw: string) => {
+      if (previewDoc !== null) return;
+      const node = history.doc.graph.nodes.find((n) => n.id === nodeId);
+      if (!node) return;
+      const next = { ...node } as Record<string, unknown>;
+      const trimmed = raw.trim();
+      if (field === "label") {
+        if (trimmed === "") return; // labels are required
+        next["label"] = raw;
+      } else if (trimmed === "") {
+        delete next[field];
+      } else if (field === "tags") {
+        next["tags"] = raw.split(",").map((t) => t.trim()).filter(Boolean);
+      } else {
+        next[field] = raw;
+      }
+      const op = makeNodeUpdate(node, next as unknown as Node);
+      if (op) pushDiff({ origin: "user", summary: `edit ${nodeId}.${field}`, ops: [op] });
+    },
+    [history, previewDoc, pushDiff],
+  );
   const matches = useMemo(() => searchNodes(doc.graph, query), [doc.graph, query]);
   const matchedIds = useMemo(() => new Set(matches.map((n) => n.id)), [matches]);
   const searchActive = query.trim() !== "";
@@ -528,7 +608,7 @@ export function App() {
       const current = history.doc;
       const existing = new Set(current.graph.nodes.map((n) => n.id));
       const id = freshId("n", existing);
-      const base = NODE_TYPES.find((t) => t.type === type)?.label ?? type;
+      const base = typeLabel(type);
       const typeCount = current.graph.nodes.filter((n) => n.type === type).length;
       const label = typeCount === 0 ? base : `${base} ${typeCount + 1}`;
       // Place below the current diagram so new nodes never land on top of it.
@@ -549,12 +629,6 @@ export function App() {
     },
     [history, previewDoc, pushDiff, viewId],
   );
-
-  const addCustomNode = useCallback(() => {
-    const type = window.prompt("Node type (any string, e.g. net-router, k8s-pod):", "net-server")?.trim();
-    if (!type) return;
-    addNode(type);
-  }, [addNode]);
 
   const connectSelected = useCallback(() => {
     if (selection.length !== 2 || previewDoc !== null) return;
@@ -633,6 +707,43 @@ export function App() {
     });
   }, [history, pushDiff, selectedGroup]);
 
+  const deleteSelected = useCallback(() => {
+    if (previewDoc !== null) return;
+    if (selection.length === 0 && edgeSelection.length === 0 && groupSelection.length === 0) return;
+    const ops = makeRemoveOps(history.doc, {
+      nodeIds: selection,
+      edgeIds: edgeSelection,
+      groupIds: groupSelection,
+    });
+    if (ops.length === 0) return;
+    pushDiff({ origin: "user", summary: `delete selection`, ops });
+  }, [edgeSelection, groupSelection, history, previewDoc, pushDiff, selection]);
+
+  // Cmd/Ctrl+G groups the selection; Cmd/Ctrl+Shift+G ungroups the selected group.
+  useEffect(() => {
+    const handleGroupShortcut = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "g" || (!event.metaKey && !event.ctrlKey) || event.altKey || tab !== "canvas") {
+        return;
+      }
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName))
+      ) {
+        return;
+      }
+      if (previewDoc !== null) return;
+      event.preventDefault();
+      if (event.shiftKey) {
+        ungroupSelected();
+      } else {
+        groupSelected();
+      }
+    };
+    window.addEventListener("keydown", handleGroupShortcut);
+    return () => window.removeEventListener("keydown", handleGroupShortcut);
+  }, [groupSelected, previewDoc, tab, ungroupSelected]);
+
   const toggleSelectedGroup = useCallback(() => {
     if (!selectedGroup) return;
     const op = makeGroupUpdate(selectedGroup, {
@@ -646,6 +757,27 @@ export function App() {
       ops: [op],
     });
   }, [pushDiff, selectedGroup]);
+
+  // Cmd/Ctrl+S saves: remote PUT in shared mode, project save locally,
+  // or prompts "save as project" for ephemeral diagrams.
+  useEffect(() => {
+    const handleSaveShortcut = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "s" || (!event.metaKey && !event.ctrlKey) || event.altKey || event.shiftKey) {
+        return;
+      }
+      event.preventDefault();
+      if (docSource) {
+        saveRemote();
+      } else if (project) {
+        saveProjectDoc(project.id, historyRef.current.doc);
+        setLocalSaveTick("saved");
+      } else {
+        saveAsProject();
+      }
+    };
+    window.addEventListener("keydown", handleSaveShortcut);
+    return () => window.removeEventListener("keydown", handleSaveShortcut);
+  }, [docSource, project, saveAsProject, saveRemote]);
 
   const download = useCallback((filename: string, content: string, mime: string) => {
     const blob = new Blob([content], { type: mime });
@@ -747,6 +879,22 @@ export function App() {
             ]}
           />
         )}
+        {docSource ? null : project ? (
+          <span
+            title="Changes auto-save to this browser (localStorage)"
+            style={{ fontSize: 11.5, color: localSaveTick === "dirty" ? "var(--muted)" : "var(--ok)", whiteSpace: "nowrap" }}
+          >
+            {localSaveTick === "dirty" ? "Saving…" : "✓ Saved"}
+          </span>
+        ) : (
+          <button
+            style={{ ...styles.btn, color: "var(--warn-text)", borderColor: "var(--warn-border)" }}
+            title="This diagram lives only in memory — save it as a project to keep it"
+            onClick={saveAsProject}
+          >
+            Unsaved — Save…
+          </button>
+        )}
         <button style={styles.tab(tab === "canvas")} onClick={() => setTab("canvas")}>Canvas</button>
         <button style={styles.tab(tab === "inventory")} onClick={() => setTab("inventory")}>Inventory</button>
         <button style={styles.tab(tab === "json")} onClick={() => setTab("json")}>JSON</button>
@@ -757,6 +905,20 @@ export function App() {
           label="File"
           buttonStyle={styles.btn}
           items={[
+            ...(docSource
+              ? []
+              : [
+                  project
+                    ? {
+                        label: "Save project",
+                        hint: "auto-saves to browser",
+                        onSelect: () => {
+                          saveProjectDoc(project.id, historyRef.current.doc);
+                          setLocalSaveTick("saved");
+                        },
+                      }
+                    : { label: "Save as project…", hint: "keep in this browser", onSelect: saveAsProject },
+                ]),
             {
               label: "Import…",
               hint: "json / yaml / mmd / dot / graphml",
@@ -775,30 +937,15 @@ export function App() {
             },
             {
               label: "Save runtime snapshot",
-              hint: ".topox-runtime.json",
+              hint: timelineRange === null ? "run Simulate first" : ".topox-runtime.json",
               disabled: timelineRange === null,
               onSelect: exportRuntimeSnapshot,
             },
           ]}
         />
-        <Dropdown
-          label="Insert"
-          buttonStyle={styles.btn}
-          items={[
-            ...NODE_TYPES.map((t) => ({
-              label: t.label,
-              hint: t.type,
-              disabled: previewDoc !== null,
-              onSelect: () => addNode(t.type),
-            })),
-            {
-              label: "Custom type…",
-              hint: "any type string",
-              disabled: previewDoc !== null,
-              onSelect: addCustomNode,
-            },
-          ]}
-        />
+        <button style={styles.btn} disabled={previewDoc !== null} onClick={() => setInsertOpen(true)}>
+          Insert…
+        </button>
         <Dropdown
           label="Arrange"
           buttonStyle={styles.btn}
@@ -837,7 +984,7 @@ export function App() {
         {docSource ? (
           <>
             <button
-              style={{ ...styles.btn, ...(dirty ? { borderColor: "#2563eb", color: "#2563eb" } : {}) }}
+              style={{ ...styles.btn, ...(dirty ? { borderColor: "var(--accent)", color: "var(--accent)" } : {}) }}
               onClick={saveRemote}
               disabled={!dirty || saveState === "saving"}
               title={`PUT ${docSource.save}`}
@@ -862,7 +1009,7 @@ export function App() {
           {simulating ? "◉ Live" : "Simulate"}
         </button>
         {simulating ? (
-          <span style={{ display: "inline-flex", gap: 8, fontSize: 11, color: "#64748b" }}>
+          <span style={{ display: "inline-flex", gap: 8, fontSize: 11, color: "var(--muted)" }}>
             {(Object.entries(statusPalette) as [string, string][]).map(([s, c]) => (
               <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
                 <span style={{ width: 7, height: 7, borderRadius: "50%", background: c }} />
@@ -915,7 +1062,7 @@ export function App() {
               moveSearch(e.shiftKey ? -1 : 1);
             }}
             style={{
-              border: "1px solid #d0d7de",
+              border: "1px solid var(--border)",
               borderRadius: 6,
               padding: "5px 10px",
               fontSize: 12.5,
@@ -926,7 +1073,7 @@ export function App() {
             <>
               <span
                 aria-label="Search result position"
-                style={{ minWidth: 38, textAlign: "center", color: "#64748b", fontSize: 11.5 }}
+                style={{ minWidth: 38, textAlign: "center", color: "var(--muted)", fontSize: 11.5 }}
               >
                 {matches.length === 0 ? "0 / 0" : `${activeSearchIndex + 1} / ${matches.length}`}
               </span>
@@ -948,11 +1095,19 @@ export function App() {
               </button>
             </>
           ) : null}
+          <button
+            style={{ ...styles.btn, padding: "4px 9px" }}
+            onClick={theme.cycle}
+            title={`Theme: ${theme.mode} (click to switch)`}
+            aria-label="Toggle theme"
+          >
+            {theme.mode === "system" ? "◐ Auto" : theme.mode === "light" ? "☀ Light" : "☾ Dark"}
+          </button>
         </div>
       </div>
 
       {error ? (
-        <div style={{ background: "#fff5f5", color: "#c53030", padding: "6px 14px", fontSize: 12.5 }}>
+        <div style={{ background: "var(--danger-bg)", color: "var(--danger-text)", padding: "6px 14px", fontSize: 12.5 }}>
           {error}
         </div>
       ) : null}
@@ -966,16 +1121,16 @@ export function App() {
                 alignItems: "center",
                 gap: 10,
                 padding: "6px 14px",
-                background: "#fffbeb",
-                borderBottom: "1px solid #fde68a",
+                background: "var(--warn-bg)",
+                borderBottom: "1px solid var(--warn-border)",
                 fontSize: 12.5,
               }}
             >
-              <span style={{ fontWeight: 600, color: "#92400e" }}>
+              <span style={{ fontWeight: 600, color: "var(--warn-text)" }}>
                 Preview · {compiled?.diff.ops.length} op(s) staged — nothing applied yet
               </span>
               <button
-                style={{ ...styles.btn, background: "#16a34a", color: "#fff", borderColor: "#16a34a" }}
+                style={{ ...styles.btn, background: "var(--ok)", color: "var(--inverse-text)", borderColor: "var(--ok)" }}
                 onClick={applyStaged}
               >
                 Apply
@@ -986,6 +1141,25 @@ export function App() {
           <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
           {tab === "canvas" ? (
             <>
+            {doc.graph.nodes.length === 0 && previewDoc === null ? (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  pointerEvents: "none",
+                  zIndex: 10,
+                }}
+              >
+                <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, lineHeight: 1.8 }}>
+                  <div style={{ fontSize: 15, fontWeight: 600 }}>Empty canvas</div>
+                  <div>Click <b>Insert…</b> to add your first node, or paste DSL in the AI panel.</div>
+                  <div style={{ fontSize: 12 }}>Select two nodes and press Connect · ⌘G groups · ⌘D duplicates · ⌫ deletes</div>
+                </div>
+              </div>
+            ) : null}
             <TopoCanvas
               doc={previewDoc ?? doc}
               viewId={viewId}
@@ -994,6 +1168,7 @@ export function App() {
               readOnly={previewDoc !== null}
               {...(resolvedRuntime !== undefined ? { runtime: resolvedRuntime } : {})}
               {...(canvasSearch !== undefined ? { search: canvasSearch } : {})}
+              colorMode={theme.resolved}
             />
             {timelineRange !== null ? (
               <TimelineBar
@@ -1013,14 +1188,75 @@ export function App() {
                 onLive={handleLive}
               />
             ) : null}
+            {previewDoc === null && (selection.length > 0 || edgeSelection.length > 0 || groupSelection.length > 0) ? (
+              <div
+                role="toolbar"
+                aria-label="Selection actions"
+                style={{
+                  position: "absolute",
+                  bottom: timelineRange !== null ? 64 : 16,
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "6px 10px",
+                  borderRadius: 10,
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  boxShadow: "var(--shadow-panel)",
+                  fontSize: 12.5,
+                  zIndex: 20,
+                }}
+              >
+                <span style={{ color: "var(--muted)", marginRight: 2 }}>
+                  {selection.length + edgeSelection.length + groupSelection.length} selected
+                </span>
+                {selection.length === 2 ? (
+                  <button style={styles.btn} onClick={connectSelected} title="Connect the two selected nodes">
+                    Connect
+                  </button>
+                ) : null}
+                {selection.length >= 2 ? (
+                  <button style={styles.btn} onClick={groupSelected} title="Group selection (⌘G)">
+                    Group
+                  </button>
+                ) : null}
+                {selectedGroup ? (
+                  <button style={styles.btn} onClick={ungroupSelected} title="Ungroup (⌘⇧G)">
+                    Ungroup
+                  </button>
+                ) : null}
+                {selectedGroup ? (
+                  <button style={styles.btn} onClick={toggleSelectedGroup}>
+                    {selectedGroup.collapsed === true ? "Expand" : "Collapse"}
+                  </button>
+                ) : null}
+                {selection.length > 0 ? (
+                  <button style={styles.btn} onClick={duplicateSelected} title="Duplicate (⌘D)">
+                    Duplicate
+                  </button>
+                ) : null}
+                <button
+                  style={{ ...styles.btn, color: "var(--danger-text)" }}
+                  onClick={deleteSelected}
+                  title="Delete selection (⌫)"
+                >
+                  Delete
+                </button>
+              </div>
+            ) : null}
             </>
           ) : tab === "inventory" ? (
             <div style={{ overflow: "auto", height: "100%", padding: 16 }}>
+              <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 8 }}>
+                Click a cell to edit — label, type, ref, tags and description commit as undoable diffs.
+              </div>
               <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}>
                 <thead>
                   <tr>
                     {["id", "type", "label", "ref", "tags", "group", "connections", "description"].map((h) => (
-                      <th key={h} style={{ textAlign: "left", borderBottom: "2px solid #e2e8f0", padding: "6px 10px", position: "sticky", top: 0, background: "#fff" }}>{h}</th>
+                      <th key={h} style={{ textAlign: "left", borderBottom: "2px solid var(--border)", padding: "6px 10px", position: "sticky", top: 0, background: "var(--surface)" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -1029,14 +1265,24 @@ export function App() {
                     .filter((r) => matchedIds.has(r.id))
                     .map((row) => (
                       <tr key={row.id}>
-                        <td style={{ padding: "6px 10px", borderBottom: "1px solid #eef1f4", fontFamily: "monospace" }}>{row.id}</td>
-                        <td style={{ padding: "6px 10px", borderBottom: "1px solid #eef1f4" }}>{row.type}</td>
-                        <td style={{ padding: "6px 10px", borderBottom: "1px solid #eef1f4", fontWeight: 600 }}>{row.label}</td>
-                        <td style={{ padding: "6px 10px", borderBottom: "1px solid #eef1f4", fontFamily: "monospace" }}>{row.ref}</td>
-                        <td style={{ padding: "6px 10px", borderBottom: "1px solid #eef1f4" }}>{row.tags}</td>
-                        <td style={{ padding: "6px 10px", borderBottom: "1px solid #eef1f4" }}>{row.group}</td>
-                        <td style={{ padding: "6px 10px", borderBottom: "1px solid #eef1f4" }}>{row.connections}</td>
-                        <td style={{ padding: "6px 10px", borderBottom: "1px solid #eef1f4", color: "#64748b" }}>{row.description}</td>
+                        <td style={{ ...invCell, padding: "6px 10px", fontFamily: "monospace" }}>{row.id}</td>
+                        <td style={invCell}>
+                          <InventoryCell value={row.type} mono disabled={previewDoc !== null} onCommit={(v) => editNodeField(row.id, "type", v)} />
+                        </td>
+                        <td style={invCell}>
+                          <InventoryCell value={row.label} bold disabled={previewDoc !== null} onCommit={(v) => editNodeField(row.id, "label", v)} />
+                        </td>
+                        <td style={invCell}>
+                          <InventoryCell value={row.ref} mono disabled={previewDoc !== null} onCommit={(v) => editNodeField(row.id, "ref", v)} />
+                        </td>
+                        <td style={invCell}>
+                          <InventoryCell value={row.tags} disabled={previewDoc !== null} onCommit={(v) => editNodeField(row.id, "tags", v)} />
+                        </td>
+                        <td style={{ ...invCell, padding: "6px 10px" }}>{row.group}</td>
+                        <td style={{ ...invCell, padding: "6px 10px" }}>{row.connections}</td>
+                        <td style={invCell}>
+                          <InventoryCell value={row.description} disabled={previewDoc !== null} onCommit={(v) => editNodeField(row.id, "description", v)} />
+                        </td>
                       </tr>
                     ))}
                 </tbody>
@@ -1082,8 +1328,8 @@ export function App() {
             </h3>
             <ol style={{ margin: 0, paddingLeft: 18 }}>
               {history.applied.slice(-12).map((d, i) => (
-                <li key={i} style={{ marginBottom: 3, color: "#475569" }}>
-                  <span style={{ color: "#94a3b8" }}>[{d.origin ?? "?"}]</span> {d.summary ?? `${d.ops.length} op(s)`}
+                <li key={i} style={{ marginBottom: 3, color: "var(--text-secondary)" }}>
+                  <span style={{ color: "var(--muted-2)" }}>[{d.origin ?? "?"}]</span> {d.summary ?? `${d.ops.length} op(s)`}
                 </li>
               ))}
             </ol>
@@ -1092,17 +1338,17 @@ export function App() {
           <section style={{ marginTop: 16 }}>
             <h3 style={{ margin: "2px 0 8px", fontSize: 13 }}>Validation</h3>
             {issues.length === 0 ? (
-              <div style={{ color: "#16a34a" }}>✓ no issues</div>
+              <div style={{ color: "var(--ok)" }}>✓ no issues</div>
             ) : (
               issues.map((issue, i) => (
-                <div key={i} style={{ color: issue.severity === "error" ? "#dc2626" : "#d97706", marginBottom: 3 }}>
+                <div key={i} style={{ color: issue.severity === "error" ? "var(--danger)" : "var(--warning)", marginBottom: 3 }}>
                   [{issue.severity}] {issue.message}
                 </div>
               ))
             )}
           </section>
 
-          <section style={{ marginTop: 16, color: "#8b95a1" }}>
+          <section style={{ marginTop: 16, color: "var(--muted-2)" }}>
             {doc.graph.nodes.length} nodes · {doc.graph.edges.length} edges · {doc.graph.groups.length} groups
             {query ? ` · ${matches.length} match(es)` : ""}
           </section>
@@ -1110,6 +1356,18 @@ export function App() {
           )}
         </div>
       </div>
+      {insertOpen ? (
+        <IconPickerDialog
+          title="Insert node"
+          customLabel="Insert custom type"
+          customPlaceholder="any type string, e.g. k8s-pod"
+          onPick={(type) => {
+            addNode(type);
+            setInsertOpen(false);
+          }}
+          onClose={() => setInsertOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

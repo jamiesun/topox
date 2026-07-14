@@ -14,8 +14,8 @@ const menuStyles: Record<string, CSSProperties> = {
     top: "calc(100% + 4px)",
     left: 0,
     minWidth: 168,
-    background: "#fff",
-    border: "1px solid #d0d7de",
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
     borderRadius: 8,
     boxShadow: "0 8px 24px rgba(15, 23, 42, 0.12)",
     padding: 4,
@@ -34,7 +34,7 @@ const menuStyles: Record<string, CSSProperties> = {
     cursor: "pointer",
     textAlign: "left" as const,
   },
-  hint: { color: "#94a3b8", fontSize: 11 },
+  hint: { color: "var(--muted-2)", fontSize: 11 },
 };
 
 /** Minimal toolbar dropdown: closes on outside click, Escape, or selection. */
@@ -87,7 +87,7 @@ export function Dropdown({
               disabled={item.disabled ?? false}
               style={{
                 ...menuStyles.item,
-                ...(item.disabled ? { color: "#cbd5e1", cursor: "default" } : {}),
+                ...(item.disabled ? { color: "var(--border-strong)", cursor: "default" } : {}),
               }}
               onMouseEnter={(e) => {
                 if (!item.disabled) e.currentTarget.style.background = "#f1f5f9";

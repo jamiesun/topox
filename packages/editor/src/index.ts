@@ -13,6 +13,13 @@ export {
 } from "./convert.js";
 export { autoLayoutDiff, type AutoLayoutOptions, type LayoutDirection } from "./layout.js";
 export {
+  registerNodeIcon,
+  resolveNodeIcon,
+  hasNodeIcon,
+  listNodeIcons,
+  type NodeIconRenderer,
+} from "./icons.js";
+export {
   snapToAlignment,
   type AlignmentBox,
   type AlignmentGuide,

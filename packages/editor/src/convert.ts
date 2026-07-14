@@ -4,6 +4,7 @@ import type {
   Group,
   MetricValue,
   NodeStatus,
+  NodeStyle,
   ResolvedRuntime,
   TopoDoc,
   View,
@@ -14,6 +15,8 @@ export interface TopoNodeData extends Record<string, unknown> {
   nodeType: string;
   ref?: string;
   icon?: string;
+  /** Visual overrides straight from the document (border, background, font). */
+  nodeStyle?: NodeStyle;
   /** Document-backed edit lock; nodes remain selectable. */
   locked: boolean;
   /** Live overlay — resolved runtime, never stored in the doc. */
@@ -149,6 +152,22 @@ export function transitiveNodeMembers(graph: Graph, groupId: string): string[] {
 
 /** Handle ids rendered on all four sides of nodes and proxies. */
 export type HandleSide = "top" | "bottom" | "left" | "right";
+
+/**
+ * Arrowhead marker refs for a directed edge. `arrow` picks which end(s)
+ * render a head; undirected edges never get one regardless of `arrow`. Both
+ * ends share the same marker def — it uses `orient="auto-start-reverse"` so
+ * a marker-start head points outward (into the source) just like marker-end
+ * points outward (into the target).
+ */
+function arrowMarkers(directed: boolean, arrow: "forward" | "backward" | "both" | undefined) {
+  if (!directed) return {};
+  const a = arrow ?? "forward";
+  return {
+    ...(a === "backward" || a === "both" ? { markerStart: "url(#topox-arrow)" } : {}),
+    ...(a === "forward" || a === "both" ? { markerEnd: "url(#topox-arrow)" } : {}),
+  };
+}
 
 /** Pick the visually shortest pair of sides for an edge between two boxes. */
 function pickHandles(source: Box, target: Box): { sourceHandle: HandleSide; targetHandle: HandleSide } {
@@ -348,6 +367,7 @@ export function toFlow(
         locked: node.locked === true,
         ...(node.ref !== undefined ? { ref: node.ref } : {}),
         ...(node.icon !== undefined ? { icon: node.icon } : {}),
+        ...(node.style !== undefined ? { nodeStyle: node.style } : {}),
         ...(rt?.status !== undefined ? { status: rt.status } : {}),
         ...(rt?.message !== undefined ? { message: rt.message } : {}),
         ...(rt?.metrics !== undefined ? { metrics: rt.metrics } : {}),
@@ -363,7 +383,14 @@ export function toFlow(
   const edges: RFEdge[] = [];
   const merged = new Map<
     string,
-    { count: number; active: boolean; directed: boolean; source: string; target: string }
+    {
+      count: number;
+      active: boolean;
+      directed: boolean;
+      arrow: "forward" | "backward" | "both" | undefined;
+      source: string;
+      target: string;
+    }
   >();
 
   // Every visible endpoint (node or proxy) has a box; edges anchor to the
@@ -395,7 +422,7 @@ export function toFlow(
         target,
         ...handlesFor(source, target),
         ...(label !== undefined ? { label } : {}),
-        ...(edge.directed ? { markerEnd: "url(#topox-arrow)" } : {}),
+        ...arrowMarkers(edge.directed === true, edge.arrow),
         ...(rt?.active === true ? { animated: true } : {}),
         style: {
           stroke: edge.color ?? (rt?.active === true ? "#2563eb" : "#9aa4b2"),
@@ -407,11 +434,12 @@ export function toFlow(
         type: "default",
       });
     } else {
-      const key = `${source}|${target}|${edge.directed === true}`;
+      const key = `${source}|${target}|${edge.directed === true}|${edge.arrow ?? "forward"}`;
       const entry = merged.get(key) ?? {
         count: 0,
         active: false,
         directed: edge.directed === true,
+        arrow: edge.arrow,
         source,
         target,
       };
@@ -428,7 +456,7 @@ export function toFlow(
       target: m.target,
       ...handlesFor(m.source, m.target),
       ...(m.count > 1 ? { label: `${m.count}×` } : {}),
-      ...(m.directed ? { markerEnd: "url(#topox-arrow)" } : {}),
+      ...arrowMarkers(m.directed, m.arrow),
       ...(m.active ? { animated: true } : {}),
       style: {
         stroke: m.active ? "#2563eb" : "#9aa4b2",
