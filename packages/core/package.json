@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "description": "TopoX kernel: graph model, validation, diff engine, projections. Zero runtime dependencies.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jamiesun/topox.git",
+    "directory": "packages/core"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -13,6 +18,9 @@
     }
   },
   "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run"
