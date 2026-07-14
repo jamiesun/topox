@@ -26,7 +26,6 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          registry-url: https://registry.npmjs.org
 
       - run: npm ci
       - run: npm run build
@@ -35,6 +34,7 @@ jobs:
       - name: Publish changed packages
         run: |
           set -euo pipefail
+          unset NODE_AUTH_TOKEN NPM_TOKEN
 
           packages=(
             "@talkincode/topox-core"
