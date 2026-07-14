@@ -1,6 +1,6 @@
 {
   "name": "@talkincode/topox-dsl",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "TopoX DSL: a line-oriented topology language compiled to GraphDiffs. The AI speaks this — it never touches the canvas.",
   "license": "MIT",
   "repository": {
@@ -26,7 +26,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@talkincode/topox-core": "^0.1.0"
+    "@talkincode/topox-core": "^0.1.1"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
