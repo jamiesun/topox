@@ -1,5 +1,5 @@
 {
-  "name": "@topox/core",
+  "name": "@talkincode/topox-core",
   "version": "0.1.0",
   "description": "TopoX kernel: graph model, validation, diff engine, projections. Zero runtime dependencies.",
   "license": "MIT",

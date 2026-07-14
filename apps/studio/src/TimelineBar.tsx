@@ -3,7 +3,7 @@
  * Seeking replays state via RuntimeTimeline.stateAt — the document, layout
  * and edit pipeline are untouched by time travel (runtime is an overlay).
  */
-import type { TimelineRange } from "@topox/core";
+import type { TimelineRange } from "@talkincode/topox-core";
 import type { CSSProperties } from "react";
 
 export interface TimelineBarProps {

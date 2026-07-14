@@ -1,5 +1,5 @@
-import type { TopoDoc } from "@topox/core";
-import { applyDiff, emptyDoc } from "@topox/core";
+import type { TopoDoc } from "@talkincode/topox-core";
+import { applyDiff, emptyDoc } from "@talkincode/topox-core";
 
 /** Demo topology: a small ISP edge deployment. */
 export function demoDoc(): TopoDoc {

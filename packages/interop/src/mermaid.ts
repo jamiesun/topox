@@ -11,8 +11,8 @@
  * same philosophy as the DSL compiler. Nodes referenced but never defined are
  * created on the fly, exactly like Mermaid itself does.
  */
-import type { Edge, Group, Node, TopoDoc } from "@topox/core";
-import { emptyDoc } from "@topox/core";
+import type { Edge, Group, Node, TopoDoc } from "@talkincode/topox-core";
+import { emptyDoc } from "@talkincode/topox-core";
 
 // ---------------------------------------------------------------------------
 // Export

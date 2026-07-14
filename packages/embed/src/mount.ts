@@ -12,8 +12,8 @@ import {
   type RuntimeWSHandle,
   type RuntimeWSOptions,
   type TopoDoc,
-} from "@topox/core";
-import { autoLayoutDiff, type AutoLayoutOptions } from "@topox/editor";
+} from "@talkincode/topox-core";
+import { autoLayoutDiff, type AutoLayoutOptions } from "@talkincode/topox-editor";
 import { EmbedApp } from "./EmbedApp.js";
 import { EmbedStore, type EmbedSelection } from "./store.js";
 // Bundled as text by build.mjs; injected once per document.

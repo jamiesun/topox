@@ -1,6 +1,6 @@
 # Embedding TopoX in your frontend
 
-`@topox/embed` mounts a full topology canvas into any DOM element. React and
+`@talkincode/topox-embed` mounts a full topology canvas into any DOM element. React and
 React Flow are bundled inside — the host page needs **no framework**: plain
 HTML, server-rendered templates, webix, jQuery, Vue, or another React app all
 work the same way.
@@ -23,7 +23,7 @@ Two artifacts ship in `packages/embed/dist/`:
 
 | Artifact | For | Global |
 | --- | --- | --- |
-| `index.js` (ESM) | bundler hosts (vite, webpack) — `import { mountTopoView } from "@topox/embed"` | — |
+| `index.js` (ESM) | bundler hosts (vite, webpack) — `import { mountTopoView } from "@talkincode/topox-embed"` | — |
 | `topox-embed.standalone.js` (IIFE) | `<script src>` pages, server templates | `window.TopoX` |
 
 Styles are injected automatically at mount; no separate CSS file to load.
@@ -43,7 +43,7 @@ Styles are injected automatically at mount; no separate CSS file to load.
 </script>
 ```
 
-`TopoDoc` is the same JSON the studio and `@topox/interop` (YAML / Mermaid)
+`TopoDoc` is the same JSON the studio and `@talkincode/topox-interop` (YAML / Mermaid)
 produce — one model everywhere.
 
 ## Configure data properties
@@ -109,10 +109,10 @@ previous live connection.
 
 Runtime state is an overlay — it never touches the document or layouts.
 
-Headless (no canvas) consumption uses the transport clients from `@topox/core`:
+Headless (no canvas) consumption uses the transport clients from `@talkincode/topox-core`:
 
 ```js
-import { connectRuntimeSSE, connectRuntimeWS } from "@topox/core";
+import { connectRuntimeSSE, connectRuntimeWS } from "@talkincode/topox-core";
 const sub = connectRuntimeSSE("/api/topo/stream", {
   onState: (state) => render(state),
   onStatus: (s) => console.log("sse:", s),   // connecting|open|retrying|closed

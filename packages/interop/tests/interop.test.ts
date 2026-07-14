@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { TopoDoc } from "@topox/core";
-import { emptyDoc, validateDoc } from "@topox/core";
+import type { TopoDoc } from "@talkincode/topox-core";
+import { emptyDoc, validateDoc } from "@talkincode/topox-core";
 import {
   docFromYaml,
   docToYaml,

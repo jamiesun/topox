@@ -1,6 +1,6 @@
 import { useState } from "react";
-import type { CompileResult } from "@topox/dsl";
-import type { DiffOp, TopoDoc } from "@topox/core";
+import type { CompileResult } from "@talkincode/topox-dsl";
+import type { DiffOp, TopoDoc } from "@talkincode/topox-core";
 import { generateDsl, loadLlmConfig, saveLlmConfig, type LlmConfig } from "./ai.js";
 
 export function describeOp(op: DiffOp): { sign: string; color: string; text: string } {

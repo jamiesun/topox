@@ -16,11 +16,11 @@ Not a drawing app. Not a whiteboard. Not a flowchart tool.
 
 | Package | Purpose |
 | --- | --- |
-| `@topox/core` | Kernel: graph model, validation, invertible diffs, `History`, runtime Timeline, Trace, and versioned runtime snapshots. Zero runtime dependencies. |
-| `@topox/dsl` | Line-oriented topology DSL compiled to `GraphDiff` (the AI output format), plus `docToDsl` serialization and an LLM prompt guide. |
-| `@topox/editor` | React Flow canvas. A controlled view: doc in, diffs out. Includes dagre auto-layout emitted as a diff. |
-| `@topox/interop` | JSON/YAML, Mermaid, Graphviz DOT, and GraphML interchange. Supported subsets and layout guarantees are documented in [`docs/interop.md`](docs/interop.md). |
-| `@topox/embed` | Framework-agnostic embed: `mountTopoView(el, opts)` mounts a canvas into any DOM element (React bundled inside — hosts need no framework). Handle offers `applyDiff`/`undo`/`autoLayout`/`connectSSE`/`connectWS`/…. See [`docs/embedding.md`](docs/embedding.md). |
+| `@talkincode/topox-core` | Kernel: graph model, validation, invertible diffs, `History`, runtime Timeline, Trace, and versioned runtime snapshots. Zero runtime dependencies. |
+| `@talkincode/topox-dsl` | Line-oriented topology DSL compiled to `GraphDiff` (the AI output format), plus `docToDsl` serialization and an LLM prompt guide. |
+| `@talkincode/topox-editor` | React Flow canvas. A controlled view: doc in, diffs out. Includes dagre auto-layout emitted as a diff. |
+| `@talkincode/topox-interop` | JSON/YAML, Mermaid, Graphviz DOT, and GraphML interchange. Supported subsets and layout guarantees are documented in [`docs/interop.md`](docs/interop.md). |
+| `@talkincode/topox-embed` | Framework-agnostic embed: `mountTopoView(el, opts)` mounts a canvas into any DOM element (React bundled inside — hosts need no framework). Handle offers `applyDiff`/`undo`/`autoLayout`/`connectSSE`/`connectWS`/…. See [`docs/embedding.md`](docs/embedding.md). |
 | `apps/studio` | Demo app: Canvas / editable Inventory / JSON views, icon-grid Insert dialog (32 built-in SVG icons: network / application / device), one-click connect + floating selection bar (group ⌘G / ungroup ⌘⇧G / duplicate / delete), per-node style overrides (colors, border, font), light / dark / system theme, local project management (localStorage, auto-save), JSON/YAML/Mermaid/DOT/GraphML import & export, CSV export, AI panel (Prompt → DSL → Diff → Preview → Apply), diff history with undo/redo. Builds to static assets embeddable in a Go binary. |
 
 ## Core objects

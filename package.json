@@ -11,7 +11,7 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "dev": "npm run dev --workspace @topox/studio"
+    "dev": "npm run dev --workspace @talkincode/topox-studio"
   },
   "allowScripts": {
     "esbuild@0.28.1": true,

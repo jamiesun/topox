@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
-import { docFromYaml, parseDot, parseGraphML, parseMermaid } from "@topox/interop";
+import { docFromYaml, parseDot, parseGraphML, parseMermaid } from "@talkincode/topox-interop";
 import { waitForCanvas } from "./helpers";
 
 async function exportFromMenu(page: Page, itemName: string): Promise<{ filename: string; body: string }> {

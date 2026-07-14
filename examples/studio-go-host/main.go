@@ -57,7 +57,7 @@ func (s docStore) put(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	// Shape check: a TopoDoc is { graph, views }. Full validation can be
-	// added by round-tripping through @topox/core in CI, or a Go schema.
+	// added by round-tripping through @talkincode/topox-core in CI, or a Go schema.
 	var probe struct {
 		Graph json.RawMessage `json:"graph"`
 		Views json.RawMessage `json:"views"`

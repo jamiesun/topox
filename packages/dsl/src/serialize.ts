@@ -1,4 +1,4 @@
-import type { AttrValue, TopoDoc } from "@topox/core";
+import type { AttrValue, TopoDoc } from "@talkincode/topox-core";
 
 function quote(value: string): string {
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;

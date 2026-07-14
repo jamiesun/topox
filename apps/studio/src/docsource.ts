@@ -1,4 +1,4 @@
-import { validateDoc, type TopoDoc } from "@topox/core";
+import { validateDoc, type TopoDoc } from "@talkincode/topox-core";
 
 /**
  * Shared-studio protocol. A host app links to the studio with:

@@ -3,7 +3,7 @@
  * (SNMP poller, Prometheus bridge, WebSocket feed) would. Keys nodes by
  * `ref` when present, exactly like production producers should.
  */
-import type { RuntimeEvent, RuntimeState, TopoDoc } from "@topox/core";
+import type { RuntimeEvent, RuntimeState, TopoDoc } from "@talkincode/topox-core";
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 

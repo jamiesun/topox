@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DiffOp, GraphDiff, Node, NodeLayout, RuntimeState, TopoDoc } from "@topox/core";
+import type { DiffOp, GraphDiff, Node, NodeLayout, RuntimeState, TopoDoc } from "@talkincode/topox-core";
 import {
   applyDiff,
   applyRuntimeEvent,
@@ -20,9 +20,9 @@ import {
   serializeRuntimeSnapshot,
   toInventory,
   validateDoc,
-} from "@topox/core";
-import { compileDsl } from "@topox/dsl";
-import { autoLayoutDiff, statusPalette, toFlow, TopoCanvas, type LayoutDirection } from "@topox/editor";
+} from "@talkincode/topox-core";
+import { compileDsl } from "@talkincode/topox-dsl";
+import { autoLayoutDiff, statusPalette, toFlow, TopoCanvas, type LayoutDirection } from "@talkincode/topox-editor";
 import {
   docFromYaml,
   docToYaml,
@@ -32,7 +32,7 @@ import {
   toDot,
   toGraphML,
   toMermaid,
-} from "@topox/interop";
+} from "@talkincode/topox-interop";
 import { AiPanel } from "./AiPanel.js";
 import { demoDoc } from "./demo.js";
 import { fetchDoc, parseDocSource, saveDocTo } from "./docsource.js";

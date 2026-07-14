@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import { listNodeIcons, resolveNodeIcon } from "@topox/editor";
+import { listNodeIcons, resolveNodeIcon } from "@talkincode/topox-editor";
 
 const GROUP_LABELS: Record<string, string> = {
   net: "Network",

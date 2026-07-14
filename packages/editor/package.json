@@ -1,5 +1,5 @@
 {
-  "name": "@topox/editor",
+  "name": "@talkincode/topox-editor",
   "version": "0.1.0",
   "description": "React Flow based canvas for TopoX. A view over the model — emits GraphDiffs, owns no state.",
   "license": "MIT",
@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "@dagrejs/dagre": "^1.1.4",
-    "@topox/core": "^0.1.0",
+    "@talkincode/topox-core": "^0.1.0",
     "@xyflow/react": "^12.4.0"
   },
   "peerDependencies": {

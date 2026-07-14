@@ -9,7 +9,7 @@ import {
   type RuntimeEvent,
   type RuntimeState,
   type TopoDoc,
-} from "@topox/core";
+} from "@talkincode/topox-core";
 
 export interface EmbedSelection {
   nodeIds: string[];

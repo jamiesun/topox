@@ -26,8 +26,8 @@ import {
   type NodeProps,
   type ReactFlowInstance,
 } from "@xyflow/react";
-import type { DiffOp, GraphDiff, NodeStatus, ResolvedRuntime, TopoDoc } from "@topox/core";
-import { makeRemoveOps, makeSetLayout } from "@topox/core";
+import type { DiffOp, GraphDiff, NodeStatus, ResolvedRuntime, TopoDoc } from "@talkincode/topox-core";
+import { makeRemoveOps, makeSetLayout } from "@talkincode/topox-core";
 import { Handle, Position } from "@xyflow/react";
 import {
   snapToAlignment,

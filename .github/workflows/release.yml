@@ -37,11 +37,11 @@ jobs:
           set -euo pipefail
 
           packages=(
-            "@topox/core"
-            "@topox/dsl"
-            "@topox/editor"
-            "@topox/interop"
-            "@topox/embed"
+            "@talkincode/topox-core"
+            "@talkincode/topox-dsl"
+            "@talkincode/topox-editor"
+            "@talkincode/topox-interop"
+            "@talkincode/topox-embed"
           )
 
           for pkg in "${packages[@]}"; do

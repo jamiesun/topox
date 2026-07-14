@@ -1,5 +1,5 @@
 {
-  "name": "@topox/studio",
+  "name": "@talkincode/topox-studio",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -10,10 +10,10 @@
     "e2e": "playwright test"
   },
   "dependencies": {
-    "@topox/core": "*",
-    "@topox/dsl": "*",
-    "@topox/editor": "*",
-    "@topox/interop": "*",
+    "@talkincode/topox-core": "*",
+    "@talkincode/topox-dsl": "*",
+    "@talkincode/topox-editor": "*",
+    "@talkincode/topox-interop": "*",
     "@xyflow/react": "^12.4.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

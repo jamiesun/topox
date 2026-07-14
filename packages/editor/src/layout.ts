@@ -1,6 +1,6 @@
 import dagre from "@dagrejs/dagre";
-import type { GraphDiff, TopoDoc } from "@topox/core";
-import { makeSetLayout } from "@topox/core";
+import type { GraphDiff, TopoDoc } from "@talkincode/topox-core";
+import { makeSetLayout } from "@talkincode/topox-core";
 
 export type LayoutDirection = "TB" | "BT" | "LR" | "RL";
 

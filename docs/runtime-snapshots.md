@@ -71,7 +71,7 @@ import {
   RuntimeTimeline,
   parseRuntimeSnapshot,
   serializeRuntimeSnapshot,
-} from "@topox/core";
+} from "@talkincode/topox-core";
 
 const timeline = new RuntimeTimeline();
 timeline.record(runtimeEvent);

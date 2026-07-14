@@ -6,8 +6,8 @@ import type {
   Group,
   Node,
   TopoDoc,
-} from "@topox/core";
-import { applyDiff, makeEdgeUpdate, makeGroupUpdate, makeNodeUpdate, makeRemoveOps } from "@topox/core";
+} from "@talkincode/topox-core";
+import { applyDiff, makeEdgeUpdate, makeGroupUpdate, makeNodeUpdate, makeRemoveOps } from "@talkincode/topox-core";
 import { tokenize, type DslError, type Token } from "./tokenize.js";
 
 export interface CompileResult {
