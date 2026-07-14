@@ -1,6 +1,6 @@
 {
   "name": "@talkincode/topox-mcp",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "MCP stdio server for TopoX proposal-backed topology workflows.",
   "license": "MIT",
   "repository": {
@@ -20,16 +20,18 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@talkincode/topox-core": "^0.1.1",
-    "@talkincode/topox-dsl": "^0.1.1",
-    "@talkincode/topox-interop": "^0.1.1",
+    "@talkincode/topox-core": "^0.1.2",
+    "@talkincode/topox-dsl": "^0.1.2",
+    "@talkincode/topox-interop": "^0.1.2",
     "zod": "^3.25.76"
   },
   "devDependencies": {

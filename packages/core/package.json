@@ -1,6 +1,6 @@
 {
   "name": "@talkincode/topox-core",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "TopoX kernel: graph model, validation, diff engine, projections. Zero runtime dependencies.",
   "license": "MIT",
   "repository": {
@@ -17,7 +17,9 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "publishConfig": {
     "access": "public"
   },

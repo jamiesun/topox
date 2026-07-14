@@ -1,6 +1,6 @@
 {
   "name": "@talkincode/topox-interop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "TopoX interop: Mermaid / DOT / draw.io / YAML importers and exporters that translate foreign formats to TopoDoc.",
   "license": "MIT",
   "repository": {
@@ -17,7 +17,9 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "publishConfig": {
     "access": "public"
   },
@@ -26,7 +28,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@talkincode/topox-core": "^0.1.1",
+    "@talkincode/topox-core": "^0.1.2",
     "@xmldom/xmldom": "^0.9.10",
     "yaml": "^2.6.1"
   },
