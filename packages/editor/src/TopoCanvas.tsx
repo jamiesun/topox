@@ -44,6 +44,7 @@ import {
   type TopoNodeData,
   type TopoRFNode,
 } from "./convert.js";
+import { hasNodeIcon, resolveNodeIcon } from "./icons.js";
 
 export interface TopoCanvasProps {
   doc: TopoDoc;
@@ -56,6 +57,8 @@ export interface TopoCanvasProps {
   runtime?: ResolvedRuntime;
   /** Read-only search projection and current result to focus. */
   search?: SearchProjection;
+  /** Visual theme for the canvas chrome (React Flow controls, minimap, background). */
+  colorMode?: "light" | "dark";
 }
 
 export const statusPalette: Record<NodeStatus, string> = {
@@ -95,6 +98,11 @@ const sideHandles = (
 const TopoNode = memo(function TopoNode({ data, selected }: NodeProps<TopoRFNode>) {
   const d = data as TopoNodeData;
   const accent = typePalette[d.nodeType] ?? "#475569";
+  const ns = d.nodeStyle;
+  const renderIcon = resolveNodeIcon(d.icon, d.nodeType);
+  // An icon value that is not a registered name renders as a literal glyph
+  // (emoji / short text) — zero-code custom icons straight from the doc.
+  const iconGlyph = d.icon !== undefined && !hasNodeIcon(d.icon) ? d.icon : undefined;
   const statusColor = d.status !== undefined ? statusPalette[d.status] : undefined;
   const borderColor =
     d.searchCurrent === true
@@ -105,7 +113,7 @@ const TopoNode = memo(function TopoNode({ data, selected }: NodeProps<TopoRFNode
           ? statusPalette.error
           : selected
             ? accent
-            : "#d0d7de";
+            : (ns?.stroke ?? "var(--topox-node-border, #d0d7de)");
   const boxShadow =
     d.searchCurrent === true
       ? "0 0 0 4px rgba(37,99,235,.28), 0 4px 14px rgba(37,99,235,.18)"
@@ -121,11 +129,15 @@ const TopoNode = memo(function TopoNode({ data, selected }: NodeProps<TopoRFNode
       data-search-dimmed={d.searchDimmed === true ? "true" : undefined}
       data-locked={d.locked === true ? "true" : undefined}
       style={{
-        border: `1.5px solid ${borderColor}`,
-        borderLeft: `4px solid ${accent}`,
+        border: `1.5px ${ns?.borderStyle ?? "solid"} ${borderColor}`,
+        borderLeft: `4px ${ns?.borderStyle ?? "solid"} ${ns?.stroke ?? accent}`,
         borderRadius: 8,
         background:
-          d.searchCurrent === true ? "#eff6ff" : d.searchMatch === true ? "#fffbeb" : "#fff",
+          d.searchCurrent === true
+            ? "#eff6ff"
+            : d.searchMatch === true
+              ? "#fffbeb"
+              : (ns?.fill ?? "var(--topox-node-bg, #fff)"),
         padding: "8px 12px",
         minWidth: 120,
         boxShadow,
@@ -167,10 +179,37 @@ const TopoNode = memo(function TopoNode({ data, selected }: NodeProps<TopoRFNode
           LOCKED
         </span>
       ) : null}
-      <div style={{ fontSize: 10, color: accent, fontWeight: 600, letterSpacing: 0.4 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 5,
+          fontSize: 10,
+          color: accent,
+          fontWeight: 600,
+          letterSpacing: 0.4,
+        }}
+      >
+        {iconGlyph !== undefined ? (
+          <span data-node-icon style={{ display: "inline-flex", flexShrink: 0, fontSize: 12, lineHeight: 1 }}>
+            {iconGlyph}
+          </span>
+        ) : renderIcon !== undefined ? (
+          <span data-node-icon style={{ display: "inline-flex", flexShrink: 0 }}>
+            {renderIcon({})}
+          </span>
+        ) : null}
         {d.nodeType}
       </div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: "#1f2d3d" }}>{d.label}</div>
+      <div
+        style={{
+          fontSize: ns?.fontSize ?? 13,
+          fontWeight: ns?.fontWeight === "normal" ? 500 : ns?.fontWeight === "bold" ? 700 : 600,
+          color: ns?.textColor ?? "var(--topox-node-text, #1f2d3d)",
+        }}
+      >
+        {d.label}
+      </div>
       {d.ref ? (
         <div style={{ fontSize: 10, color: "#8b95a1", marginTop: 2 }}>{d.ref}</div>
       ) : null}
@@ -191,14 +230,14 @@ interface GroupActions {
 const GroupActionsContext = createContext<GroupActions>({ toggle: () => {}, readOnly: true });
 
 const toggleButtonStyle: CSSProperties = {
-  border: "1px solid #cbd5e1",
+  border: "1px solid var(--topox-node-border, #cbd5e1)",
   borderRadius: 5,
-  background: "#fff",
+  background: "var(--topox-node-bg, #fff)",
   cursor: "pointer",
   fontSize: 11,
   lineHeight: "16px",
   padding: "0 5px",
-  color: "#475569",
+  color: "var(--topox-muted, #475569)",
 };
 
 const TopoGroupNode = memo(function TopoGroupNode({ data, selected }: NodeProps<TopoRFNode>) {
@@ -275,7 +314,7 @@ const TopoGroupNode = memo(function TopoGroupNode({ data, selected }: NodeProps<
             ? "linear-gradient(#eff6ff, #dbeafe)"
             : d.searchMatch === true
               ? "linear-gradient(#fffbeb, #fef3c7)"
-              : "linear-gradient(#f8fafc, #eef2f7)",
+              : "var(--topox-proxy-bg, linear-gradient(#f8fafc, #eef2f7))",
         boxShadow:
           d.searchCurrent === true
             ? "0 0 0 4px rgba(37,99,235,.28)"
@@ -283,7 +322,7 @@ const TopoGroupNode = memo(function TopoGroupNode({ data, selected }: NodeProps<
               ? "0 0 0 3px rgba(245,158,11,.28)"
               : selected
                 ? "0 0 0 3px rgba(99,102,241,0.15)"
-                : "2px 2px 0 #dbe2ea, 4px 4px 0 #e8edf3",
+                : "var(--topox-proxy-shadow, 2px 2px 0 #dbe2ea, 4px 4px 0 #e8edf3)",
         padding: "8px 12px",
         fontFamily: "ui-sans-serif, system-ui, sans-serif",
         boxSizing: "border-box",
@@ -379,6 +418,7 @@ export function TopoCanvas({
   readOnly = false,
   runtime,
   search,
+  colorMode = "light",
 }: TopoCanvasProps) {
   const view = doc.views.find((v) => v.id === viewId) ?? doc.views[0];
 
@@ -735,6 +775,7 @@ export function TopoCanvas({
         fitView
         proOptions={{ hideAttribution: true }}
         deleteKeyCode={readOnly ? null : ["Backspace", "Delete"]}
+        colorMode={colorMode}
       >
         <svg style={{ position: "absolute", width: 0, height: 0 }}>
           <defs>
@@ -785,7 +826,7 @@ export function TopoCanvas({
             />
           ) : null}
         </ViewportPortal>
-        <Background gap={16} color="#e5e9ef" />
+        <Background gap={16} color="var(--topox-grid, #e5e9ef)" />
         <Controls showInteractive={false} />
         <MiniMap pannable zoomable />
       </ReactFlow>

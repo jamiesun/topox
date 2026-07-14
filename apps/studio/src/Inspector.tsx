@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import type {
   AttrValue,
   Attrs,
@@ -8,21 +8,23 @@ import type {
   Node,
   NodeRuntimeHistoryEntry,
   NodeRuntime,
+  NodeStyle,
   TopoDoc,
 } from "@topox/core";
 import { makeEdgeUpdate, makeGroupUpdate, makeNodeUpdate } from "@topox/core";
 import { statusPalette } from "@topox/editor";
+import { IconPickerDialog } from "./IconPicker.js";
 
 const card: CSSProperties = {
-  background: "#fff",
-  border: "1px solid #e2e8f0",
+  background: "var(--surface)",
+  border: "1px solid var(--border)",
   borderRadius: 8,
   padding: 10,
 };
 
 const inputStyle: CSSProperties = {
   width: "100%",
-  border: "1px solid #d0d7de",
+  border: "1px solid var(--border)",
   borderRadius: 6,
   padding: "4px 8px",
   boxSizing: "border-box",
@@ -30,16 +32,42 @@ const inputStyle: CSSProperties = {
   fontFamily: "inherit",
 };
 
-const labelStyle: CSSProperties = { display: "block", marginTop: 8, color: "#64748b" };
+const labelStyle: CSSProperties = { display: "block", marginTop: 8, color: "var(--muted)" };
+
+/** Titled section with a top divider; keeps the panel scannable. */
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div style={{ marginTop: 12, borderTop: "1px solid var(--border-soft)", paddingTop: 8 }}>
+      <div
+        style={{
+          fontSize: 10.5,
+          textTransform: "uppercase",
+          letterSpacing: 0.7,
+          color: "var(--muted-2)",
+          fontWeight: 700,
+          marginBottom: 2,
+        }}
+      >
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** Two fields side by side. */
+function Row2({ children }: { children: ReactNode }) {
+  return <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 8 }}>{children}</div>;
+}
 
 const smallBtn: CSSProperties = {
-  border: "1px solid #d0d7de",
+  border: "1px solid var(--border)",
   borderRadius: 6,
-  background: "#fff",
+  background: "var(--surface)",
   cursor: "pointer",
   fontSize: 11.5,
   padding: "3px 8px",
-  color: "#334155",
+  color: "var(--text-secondary)",
 };
 
 /**
@@ -77,6 +105,173 @@ function DraftField({
   );
 }
 
+/** Icon field: freeform input (emoji ok) plus a popup grid over the registry. */
+function IconField({ value, onCommit }: { value: string; onCommit: (next: string) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      <div style={{ flex: 1 }}>
+        <DraftField value={value} onCommit={onCommit} placeholder="e.g. net-router or 🔥" mono />
+      </div>
+      <button
+        onClick={() => setOpen(true)}
+        style={{
+          border: "1px solid var(--border-strong)",
+          borderRadius: 6,
+          background: "var(--surface-2)",
+          padding: "4px 10px",
+          fontSize: 12,
+          cursor: "pointer",
+          whiteSpace: "nowrap",
+        }}
+      >
+        Pick…
+      </button>
+      {open ? (
+        <IconPickerDialog
+          title="Choose icon"
+          customLabel="Use value"
+          customPlaceholder="emoji or short text, e.g. 🔥"
+          onPick={(name) => {
+            onCommit(name);
+            setOpen(false);
+          }}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** One color property row: swatch picker + clear back to theme default. */
+function ColorRow({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string | undefined;
+  onChange: (next: string | undefined) => void;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+      <span style={{ color: "var(--muted)", width: 62, flexShrink: 0 }}>{label}</span>
+      <input
+        type="color"
+        aria-label={`${label} color`}
+        value={value ?? "#ffffff"}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          width: 34,
+          height: 22,
+          padding: 1,
+          border: "1px solid var(--border)",
+          borderRadius: 4,
+          background: "var(--surface)",
+          cursor: "pointer",
+        }}
+      />
+      <code style={{ fontSize: 11, color: value !== undefined ? "var(--text-secondary)" : "var(--muted-2)" }}>
+        {value ?? "default"}
+      </code>
+      {value !== undefined ? (
+        <button style={{ ...smallBtn, marginLeft: "auto" }} onClick={() => onChange(undefined)}>
+          reset
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+const selectStyle: CSSProperties = {
+  ...inputStyle,
+  padding: "3px 6px",
+  cursor: "pointer",
+};
+
+/**
+ * NodeStyle editor — border, background and font overrides. Emits the whole
+ * style bag per change; an empty bag deletes the field (back to theme).
+ */
+function StyleEditor({
+  style,
+  onCommit,
+}: {
+  style: NodeStyle | undefined;
+  onCommit: (next: NodeStyle | undefined) => void;
+}) {
+  const set = (patch: Partial<Record<keyof NodeStyle, NodeStyle[keyof NodeStyle] | undefined>>) => {
+    const next: Record<string, unknown> = { ...style };
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === undefined) delete next[k];
+      else next[k] = v;
+    }
+    onCommit(Object.keys(next).length === 0 ? undefined : (next as NodeStyle));
+  };
+  return (
+    <div>
+      <ColorRow label="background" value={style?.fill} onChange={(v) => set({ fill: v })} />
+      <ColorRow label="border" value={style?.stroke} onChange={(v) => set({ stroke: v })} />
+      <ColorRow label="text" value={style?.textColor} onChange={(v) => set({ textColor: v })} />
+      <Row2>
+        <div>
+          <label style={labelStyle}>border style</label>
+          <select
+            value={style?.borderStyle ?? ""}
+            onChange={(e) =>
+              set({ borderStyle: e.target.value === "" ? undefined : (e.target.value as NodeStyle["borderStyle"]) })
+            }
+            style={selectStyle}
+          >
+            <option value="">default</option>
+            <option value="solid">solid</option>
+            <option value="dashed">dashed</option>
+            <option value="dotted">dotted</option>
+          </select>
+        </div>
+        <div>
+          <label style={labelStyle}>font weight</label>
+          <select
+            value={style?.fontWeight ?? ""}
+            onChange={(e) =>
+              set({ fontWeight: e.target.value === "" ? undefined : (e.target.value as NodeStyle["fontWeight"]) })
+            }
+            style={selectStyle}
+          >
+            <option value="">default</option>
+            <option value="normal">normal</option>
+            <option value="bold">bold</option>
+          </select>
+        </div>
+      </Row2>
+      <Row2>
+        <div>
+          <label style={labelStyle}>font size (px)</label>
+          <DraftField
+            value={style?.fontSize !== undefined ? String(style.fontSize) : ""}
+            placeholder="13"
+            onCommit={(raw) => {
+              const t = raw.trim();
+              if (t === "") return set({ fontSize: undefined });
+              const n = Number(t);
+              if (Number.isFinite(n) && n > 0) set({ fontSize: n });
+            }}
+          />
+        </div>
+        <div>
+          {style !== undefined ? (
+            <>
+              <label style={labelStyle}>&nbsp;</label>
+              <button style={smallBtn} onClick={() => onCommit(undefined)}>
+                reset all styles
+              </button>
+            </>
+          ) : null}
+        </div>
+      </Row2>
+    </div>
+  );
+}
 /** "true"/"42"/"[1,2]" become typed values; everything else stays a string. */
 function parseAttrValue(raw: string): AttrValue {
   const t = raw.trim();
@@ -119,8 +314,8 @@ function AttrsEditor({
   };
 
   return (
-    <div style={{ marginTop: 10, borderTop: "1px dashed #e2e8f0", paddingTop: 8 }}>
-      <div style={{ color: "#64748b", marginBottom: 4 }}>custom attrs</div>
+    <div style={{ marginTop: 10, borderTop: "1px dashed var(--border)", paddingTop: 8 }}>
+      <div style={{ color: "var(--muted)", marginBottom: 4 }}>custom attrs</div>
       {entries.map(([key, value]) => (
         <div key={key} style={{ display: "flex", gap: 4, marginBottom: 4, alignItems: "center" }}>
           <code style={{ flex: "0 0 32%", fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -198,7 +393,7 @@ function JsonEditor<T extends { id: string }>({
           resize: "vertical",
         }}
       />
-      {err !== null ? <div style={{ color: "#dc2626", marginTop: 4 }}>{err}</div> : null}
+      {err !== null ? <div style={{ color: "var(--danger)", marginTop: 4 }}>{err}</div> : null}
       <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
         <button
           style={smallBtn}
@@ -265,9 +460,9 @@ function RuntimeTrace({
   }
 
   return (
-    <section style={{ marginTop: 10, borderTop: "1px dashed #e2e8f0", paddingTop: 8 }}>
+    <section style={{ marginTop: 10, borderTop: "1px dashed var(--border)", paddingTop: 8 }}>
       <h4 style={{ margin: "0 0 4px", fontSize: 12.5 }}>Runtime trace</h4>
-      <div style={{ color: "#64748b", fontSize: 11.5, marginBottom: 6 }}>
+      <div style={{ color: "var(--muted)", fontSize: 11.5, marginBottom: 6 }}>
         {history.length} retained event{history.length === 1 ? "" : "s"}
       </div>
       <ol style={{ margin: 0, paddingLeft: 18, fontSize: 11.5 }}>
@@ -286,12 +481,12 @@ function RuntimeTrace({
                 onClick={() => onSeek(entry.ts)}
                 aria-label={`Jump to runtime event at ${formatTraceTime(entry.ts)}`}
               >
-                <span style={{ color: "#64748b", fontVariantNumeric: "tabular-nums" }}>
+                <span style={{ color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
                   {formatTraceTime(entry.ts)}
                 </span>{" "}
                 <strong>{status}</strong>
                 {metrics.length > 0 ? (
-                  <span style={{ color: "#475569" }}>
+                  <span style={{ color: "var(--text-secondary)" }}>
                     {" "}
                     {metrics.map(([name, value]) => `${name} ${value}`).join(" · ")}
                   </span>
@@ -301,15 +496,15 @@ function RuntimeTrace({
           );
         })}
       </ol>
-      <div style={{ color: "#64748b", fontSize: 11.5, marginTop: 8, marginBottom: 3 }}>Metric history</div>
+      <div style={{ color: "var(--muted)", fontSize: 11.5, marginTop: 8, marginBottom: 3 }}>Metric history</div>
       {metricHistory.size === 0 ? (
-        <div style={{ color: "#8b95a1", fontSize: 11.5 }}>No metric samples received.</div>
+        <div style={{ color: "var(--muted-2)", fontSize: 11.5 }}>No metric samples received.</div>
       ) : (
         <table style={{ fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}>
           <tbody>
             {[...metricHistory.entries()].map(([name, samples]) => (
               <tr key={name}>
-                <td style={{ color: "#64748b", paddingRight: 8, verticalAlign: "top" }}>{name}</td>
+                <td style={{ color: "var(--muted)", paddingRight: 8, verticalAlign: "top" }}>{name}</td>
                 <td>
                   {samples
                     .slice(-6)
@@ -366,7 +561,7 @@ export function Inspector({
     return (
       <div style={card} key={node.id}>
         <div style={{ fontWeight: 700 }}>{node.label}</div>
-        <div style={{ color: "#64748b", marginBottom: 6 }}>
+        <div style={{ color: "var(--muted)", marginBottom: 2 }}>
           {node.id}
           {node.ref !== undefined ? (
             <>
@@ -376,29 +571,54 @@ export function Inspector({
           ) : null}
         </div>
 
-        <label style={labelStyle}>label</label>
-        <DraftField value={node.label} onCommit={(v) => setField("label", v)} />
-        <label style={labelStyle}>type</label>
-        <DraftField value={node.type} onCommit={(v) => setField("type", v)} mono />
-        <label style={labelStyle}>description</label>
-        <DraftField value={node.description ?? ""} onCommit={(v) => setField("description", v)} placeholder="—" />
-        <label style={labelStyle}>tags (comma separated)</label>
-        <DraftField value={node.tags?.join(", ") ?? ""} onCommit={(v) => setField("tags", v)} placeholder="—" />
-        <label style={labelStyle}>ref</label>
-        <DraftField value={node.ref ?? ""} onCommit={(v) => setField("ref", v)} placeholder="external resource id" mono />
-        <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 6 }}>
-          <input
-            type="checkbox"
-            checked={node.locked === true}
-            onChange={(event) => {
+        <Section title="Identity">
+          <label style={labelStyle}>label</label>
+          <DraftField value={node.label} onCommit={(v) => setField("label", v)} />
+          <Row2>
+            <div>
+              <label style={labelStyle}>type</label>
+              <DraftField value={node.type} onCommit={(v) => setField("type", v)} mono />
+            </div>
+            <div>
+              <label style={labelStyle}>ref</label>
+              <DraftField value={node.ref ?? ""} onCommit={(v) => setField("ref", v)} placeholder="resource id" mono />
+            </div>
+          </Row2>
+          <label style={labelStyle}>icon (name or emoji; blank = type default)</label>
+          <IconField value={node.icon ?? ""} onCommit={(v) => setField("icon", v)} />
+        </Section>
+
+        <Section title="Appearance">
+          <StyleEditor
+            style={node.style}
+            onCommit={(style) => {
               const next = { ...node };
-              if (event.target.checked) next.locked = true;
-              else delete next.locked;
-              patchNode(next, `${event.target.checked ? "lock" : "unlock"} ${node.id}`);
+              if (style === undefined) delete next.style;
+              else next.style = style;
+              patchNode(next, `edit ${node.id}.style`);
             }}
           />
-          locked
-        </label>
+        </Section>
+
+        <Section title="Metadata">
+          <label style={labelStyle}>description</label>
+          <DraftField value={node.description ?? ""} onCommit={(v) => setField("description", v)} placeholder="—" />
+          <label style={labelStyle}>tags (comma separated)</label>
+          <DraftField value={node.tags?.join(", ") ?? ""} onCommit={(v) => setField("tags", v)} placeholder="—" />
+          <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 6 }}>
+            <input
+              type="checkbox"
+              checked={node.locked === true}
+              onChange={(event) => {
+                const next = { ...node };
+                if (event.target.checked) next.locked = true;
+                else delete next.locked;
+                patchNode(next, `${event.target.checked ? "lock" : "unlock"} ${node.id}`);
+              }}
+            />
+            locked
+          </label>
+        </Section>
 
         <AttrsEditor
           attrs={node.attrs}
@@ -419,7 +639,7 @@ export function Inspector({
         />
 
         {nodeRuntime ? (
-          <div style={{ marginTop: 10, borderTop: "1px dashed #e2e8f0", paddingTop: 8 }}>
+          <div style={{ marginTop: 10, borderTop: "1px dashed var(--border)", paddingTop: 8 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span
                 style={{
@@ -427,12 +647,12 @@ export function Inspector({
                   height: 8,
                   borderRadius: "50%",
                   background:
-                    nodeRuntime.status !== undefined ? statusPalette[nodeRuntime.status] : "#94a3b8",
+                    nodeRuntime.status !== undefined ? statusPalette[nodeRuntime.status] : "var(--muted-2)",
                 }}
               />
               <strong>{nodeRuntime.status ?? "unknown"}</strong>
               {nodeRuntime.message !== undefined ? (
-                <span style={{ color: "#64748b" }}>{nodeRuntime.message}</span>
+                <span style={{ color: "var(--muted)" }}>{nodeRuntime.message}</span>
               ) : null}
             </div>
             {nodeRuntime.metrics !== undefined ? (
@@ -440,7 +660,7 @@ export function Inspector({
                 <tbody>
                   {Object.entries(nodeRuntime.metrics).map(([k, v]) => (
                     <tr key={k}>
-                      <td style={{ color: "#64748b", paddingRight: 12 }}>{k}</td>
+                      <td style={{ color: "var(--muted)", paddingRight: 12 }}>{k}</td>
                       <td>{v}</td>
                     </tr>
                   ))}
@@ -471,12 +691,16 @@ export function Inspector({
     };
     const srcLabel = doc.graph.nodes.find((n) => n.id === edge.source)?.label ?? edge.source;
     const dstLabel = doc.graph.nodes.find((n) => n.id === edge.target)?.label ?? edge.target;
+    const arrowGlyph =
+      edge.directed !== true ? "—" : edge.arrow === "backward" ? "←" : edge.arrow === "both" ? "↔" : "→";
+    const directionValue: "none" | "forward" | "backward" | "both" =
+      edge.directed !== true ? "none" : (edge.arrow ?? "forward");
     return (
       <div style={card} key={edge.id}>
         <div style={{ fontWeight: 700 }}>
-          {srcLabel} {edge.directed === true ? "→" : "—"} {dstLabel}
+          {srcLabel} {arrowGlyph} {dstLabel}
         </div>
-        <div style={{ color: "#64748b", marginBottom: 6 }}>edge · {edge.id}</div>
+        <div style={{ color: "var(--muted)", marginBottom: 6 }}>edge · {edge.id}</div>
 
         <label style={labelStyle}>label</label>
         <DraftField value={edge.label ?? ""} onCommit={(v) => setField("label", v)} placeholder="—" />
@@ -486,16 +710,29 @@ export function Inspector({
         <DraftField value={edge.color ?? ""} onCommit={(v) => setField("color", v)} placeholder="#hex" mono />
         <label style={labelStyle}>weight</label>
         <DraftField value={edge.weight?.toString() ?? ""} onCommit={(v) => setField("weight", v)} placeholder="number" mono />
-        <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 6 }}>
-          <input
-            type="checkbox"
-            checked={edge.directed === true}
-            onChange={(e) =>
-              patchEdge({ ...edge, directed: e.target.checked }, `edit edge ${edge.id}.directed`)
+        <label style={labelStyle}>direction</label>
+        <select
+          value={directionValue}
+          onChange={(e) => {
+            const value = e.target.value as "none" | "forward" | "backward" | "both";
+            const next = { ...edge };
+            if (value === "none") {
+              delete next.directed;
+              delete next.arrow;
+            } else {
+              next.directed = true;
+              if (value === "forward") delete next.arrow;
+              else next.arrow = value;
             }
-          />
-          directed
-        </label>
+            patchEdge(next, `edit edge ${edge.id}.direction`);
+          }}
+          style={selectStyle}
+        >
+          <option value="none">undirected —</option>
+          <option value="forward">forward →</option>
+          <option value="backward">backward ←</option>
+          <option value="both">both ↔</option>
+        </select>
 
         <AttrsEditor
           attrs={edge.attrs}
@@ -531,7 +768,7 @@ export function Inspector({
     return (
       <div style={card} key={group.id}>
         <div style={{ fontWeight: 700 }}>{group.label}</div>
-        <div style={{ color: "#64748b", marginBottom: 6 }}>
+        <div style={{ color: "var(--muted)", marginBottom: 6 }}>
           group · {group.children.length} member(s)
           {group.collapsed === true ? " · collapsed" : ""}
         </div>
@@ -545,8 +782,8 @@ export function Inspector({
             Ungroup
           </button>
         </div>
-        <div style={{ marginTop: 10, borderTop: "1px dashed #e2e8f0", paddingTop: 8 }}>
-          <div style={{ color: "#64748b", marginBottom: 4 }}>members</div>
+        <div style={{ marginTop: 10, borderTop: "1px dashed var(--border)", paddingTop: 8 }}>
+          <div style={{ color: "var(--muted)", marginBottom: 4 }}>members</div>
           <ul style={{ margin: 0, paddingLeft: 16 }}>
             {group.children.map((c) => {
               const memberNode = doc.graph.nodes.find((n) => n.id === c);
@@ -580,7 +817,7 @@ export function Inspector({
   }
 
   return (
-    <div style={{ color: "#8b95a1" }}>
+    <div style={{ color: "var(--muted-2)" }}>
       {multiCount > 1 ? `${multiCount} items selected` : "select a node, edge or group"}
     </div>
   );

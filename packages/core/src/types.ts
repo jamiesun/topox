@@ -25,6 +25,24 @@ export type AttrValue =
 
 export type Attrs = Record<string, AttrValue>;
 
+/**
+ * Presentation overrides for a node. Domain-agnostic and JSON-safe; renderers
+ * interpret it, the kernel just stores it. Absent fields fall back to the
+ * renderer's theme defaults.
+ */
+export interface NodeStyle {
+  /** Card background color (CSS color). */
+  fill?: string;
+  /** Border color (CSS color). */
+  stroke?: string;
+  /** Label text color (CSS color). */
+  textColor?: string;
+  /** Label font size in px. */
+  fontSize?: number;
+  fontWeight?: "normal" | "bold";
+  borderStyle?: "solid" | "dashed" | "dotted";
+}
+
 export interface Node {
   id: NodeId;
   /** Domain vocabulary lives here (e.g. "net-router"). The kernel treats it as an opaque string. */
@@ -32,6 +50,8 @@ export interface Node {
   label: string;
   description?: string;
   icon?: string;
+  /** Visual overrides (border, background, font). Interpreted by renderers only. */
+  style?: NodeStyle;
   tags?: string[];
   /** Prevents editor movement while keeping the node selectable and editable. */
   locked?: boolean;
@@ -50,6 +70,12 @@ export interface Edge {
   target: NodeId;
   /** Defaults to false (undirected). */
   directed?: boolean;
+  /**
+   * Which end(s) render an arrowhead. Only meaningful when `directed` is
+   * true; ignored (no arrowheads) otherwise. Defaults to "forward"
+   * (source → target), matching pre-existing directed-edge rendering.
+   */
+  arrow?: "forward" | "backward" | "both";
   type?: string;
   label?: string;
   color?: string;

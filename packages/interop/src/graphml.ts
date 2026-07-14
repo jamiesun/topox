@@ -8,7 +8,7 @@
 import { DOMParser, type Element as XmlElement, type Node as XmlNode } from "@xmldom/xmldom";
 import type { AttrValue, Edge, Group, Node, NodeLayout, TopoDoc } from "@topox/core";
 import { emptyDoc } from "@topox/core";
-import { utf8ToHex } from "./encoding.js";
+import { parseNodeStyleAttribute, utf8ToHex } from "./encoding.js";
 
 export interface GraphMLParseResult {
   doc: TopoDoc;
@@ -36,6 +36,7 @@ const K = {
   nodeType: "topox_node_type",
   nodeDescription: "topox_node_description",
   nodeIcon: "topox_node_icon",
+  nodeStyle: "topox_node_style",
   nodeRef: "topox_node_ref",
   nodeTags: "topox_node_tags",
   nodeLocked: "topox_node_locked",
@@ -51,6 +52,7 @@ const K = {
   edgeType: "topox_edge_type",
   edgeColor: "topox_edge_color",
   edgeWeight: "topox_edge_weight",
+  edgeArrow: "topox_edge_arrow",
 } as const;
 
 const FIXED_KEYS: GraphMLKey[] = [
@@ -74,6 +76,7 @@ const FIXED_KEYS: GraphMLKey[] = [
     topoxScope: "node",
   },
   { id: K.nodeIcon, scope: "node", name: "icon", type: "string", topoxScope: "node" },
+  { id: K.nodeStyle, scope: "node", name: "style", type: "string", topoxScope: "node" },
   { id: K.nodeRef, scope: "node", name: "ref", type: "string", topoxScope: "node" },
   {
     id: K.nodeTags,
@@ -120,6 +123,7 @@ const FIXED_KEYS: GraphMLKey[] = [
     type: "double",
     topoxScope: "edge",
   },
+  { id: K.edgeArrow, scope: "edge", name: "arrow", type: "string", topoxScope: "edge" },
 ];
 const FIXED_KEY_IDS = new Set(FIXED_KEYS.map((key) => key.id));
 
@@ -253,6 +257,9 @@ export function toGraphML(doc: TopoDoc): string {
       lines.push(dataLine(`${indent}  `, K.nodeDescription, node.description));
     }
     if (node.icon !== undefined) lines.push(dataLine(`${indent}  `, K.nodeIcon, node.icon));
+    if (node.style !== undefined) {
+      lines.push(dataLine(`${indent}  `, K.nodeStyle, JSON.stringify(node.style)));
+    }
     if (node.ref !== undefined) lines.push(dataLine(`${indent}  `, K.nodeRef, node.ref));
     if (node.tags !== undefined) {
       lines.push(dataLine(`${indent}  `, K.nodeTags, JSON.stringify(node.tags)));
@@ -316,6 +323,9 @@ export function toGraphML(doc: TopoDoc): string {
     if (edge.color !== undefined) lines.push(dataLine("      ", K.edgeColor, edge.color));
     if (edge.weight !== undefined) {
       lines.push(dataLine("      ", K.edgeWeight, String(edge.weight)));
+    }
+    if (edge.directed === true && edge.arrow !== undefined) {
+      lines.push(dataLine("      ", K.edgeArrow, edge.arrow));
     }
     lines.push(...customDataLines("      ", edge.attrs, edgeCustom.byName));
     lines.push("    </edge>");
@@ -396,6 +406,7 @@ function parsedCustomAttrs(
       "type",
       "description",
       "icon",
+      "style",
       "ref",
       "tags",
       "locked",
@@ -539,6 +550,11 @@ export function parseGraphML(text: string): GraphMLParseResult {
       if (descriptionValue !== undefined) node.description = descriptionValue;
       const icon = dataValue(entries, K.nodeIcon, "icon");
       if (icon !== undefined) node.icon = icon;
+      const styleRaw = dataValue(entries, K.nodeStyle, "style");
+      if (styleRaw !== undefined) {
+        const style = parseNodeStyleAttribute(styleRaw);
+        if (style !== undefined) node.style = style;
+      }
       const ref = dataValue(entries, K.nodeRef, "ref");
       if (ref !== undefined) node.ref = ref;
       const tags = dataValue(entries, K.nodeTags, "tags");
@@ -622,6 +638,10 @@ export function parseGraphML(text: string): GraphMLParseResult {
       if (color !== undefined) edge.color = color;
       const weight = finiteNumber(dataValue(entries, K.edgeWeight, "weight"));
       if (weight !== undefined) edge.weight = weight;
+      const arrow = dataValue(entries, K.edgeArrow, "arrow");
+      if (directed && (arrow === "forward" || arrow === "backward" || arrow === "both")) {
+        edge.arrow = arrow;
+      }
       const attrs = parsedCustomAttrs(entries, "edge");
       if (attrs !== undefined) edge.attrs = attrs;
       edges.push(edge);

@@ -4,7 +4,7 @@
  */
 import type { AttrValue, Edge, Group, Node, TopoDoc } from "@topox/core";
 import { emptyDoc } from "@topox/core";
-import { hexToUtf8, utf8ToHex } from "./encoding.js";
+import { hexToUtf8, parseNodeStyleAttribute, utf8ToHex } from "./encoding.js";
 
 export interface DotParseResult {
   doc: TopoDoc;
@@ -48,6 +48,9 @@ function nodeAttributes(node: Node): [string, string, boolean?][] {
       ? ([["topox_description", node.description]] as [string, string][])
       : []),
     ...(node.icon !== undefined ? ([["topox_icon", node.icon]] as [string, string][]) : []),
+    ...(node.style !== undefined
+      ? ([["topox_style", JSON.stringify(node.style)]] as [string, string][])
+      : []),
     ...(node.tags !== undefined
       ? ([["topox_tags", JSON.stringify(node.tags)]] as [string, string][])
       : []),
@@ -105,6 +108,8 @@ export function toDot(doc: TopoDoc): string {
     const attrs: [string, string, boolean?][] = [["id", edge.id]];
     if (edge.label !== undefined) attrs.push(["label", edge.label]);
     if (edge.directed !== true) attrs.push(["dir", "none", false]);
+    else if (edge.arrow === "backward") attrs.push(["dir", "back", false]);
+    else if (edge.arrow === "both") attrs.push(["dir", "both", false]);
     if (edge.type !== undefined) attrs.push(["topox_type", edge.type]);
     attrs.push(...customDotAttributes(edge.attrs));
     lines.push(
@@ -395,11 +400,14 @@ export function parseDot(text: string): DotParseResult {
         attrs["topox_directed"] === "false" || attrs["dir"] === "none"
           ? false
           : attrs["topox_directed"] === "true" || operator === "->" || directedByDefault;
+      const arrow =
+        attrs["dir"] === "back" ? "backward" : attrs["dir"] === "both" ? "both" : undefined;
       const edge: Edge = {
         id,
         source,
         target,
         ...(directed ? { directed: true } : {}),
+        ...(directed && arrow !== undefined ? { arrow } : {}),
         ...(attrs["label"] !== undefined ? { label: attrs["label"] } : {}),
         ...(attrs["topox_type"] !== undefined ? { type: attrs["topox_type"] } : {}),
       };
@@ -421,6 +429,10 @@ export function parseDot(text: string): DotParseResult {
         node.description = attrs["topox_description"];
       }
       if (attrs["topox_icon"] !== undefined) node.icon = attrs["topox_icon"];
+      if (attrs["topox_style"] !== undefined) {
+        const style = parseNodeStyleAttribute(attrs["topox_style"]);
+        if (style !== undefined) node.style = style;
+      }
       if (attrs["topox_tags"] !== undefined) {
         const tags = parseJsonAttribute(attrs["topox_tags"]);
         if (Array.isArray(tags) && tags.every((tag) => typeof tag === "string")) {

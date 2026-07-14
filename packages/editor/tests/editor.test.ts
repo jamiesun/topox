@@ -120,6 +120,62 @@ describe("toFlow", () => {
     });
   });
 
+  it("passes node style overrides through to node data", () => {
+    const doc = applyDiff(chainDoc(), {
+      ops: [
+        {
+          op: "update_node",
+          id: "b",
+          before: { style: null },
+          after: { style: { fill: "#fee2e2", stroke: "#dc2626", fontWeight: "bold" } },
+        },
+      ],
+    });
+    const { nodes } = toFlow(doc, "default");
+    expect(nodes.find((node) => node.id === "b")?.data).toMatchObject({
+      nodeStyle: { fill: "#fee2e2", stroke: "#dc2626", fontWeight: "bold" },
+    });
+    expect(nodes.find((node) => node.id === "a")?.data["nodeStyle"]).toBeUndefined();
+  });
+
+  it("picks arrowhead markers from directed + arrow direction", () => {
+    // e1 (a->b) defaults to forward; e2 (b->c) set to backward and both.
+    const backward = applyDiff(chainDoc(), {
+      ops: [{ op: "update_edge", id: "e2", before: { arrow: null }, after: { arrow: "backward" } }],
+    });
+    expect(toFlow(backward, "default").edges.find((e) => e.id === "e1")).toMatchObject({
+      markerEnd: "url(#topox-arrow)",
+    });
+    expect(toFlow(backward, "default").edges.find((e) => e.id === "e1")?.markerStart).toBeUndefined();
+    expect(toFlow(backward, "default").edges.find((e) => e.id === "e2")).toMatchObject({
+      markerStart: "url(#topox-arrow)",
+    });
+    expect(toFlow(backward, "default").edges.find((e) => e.id === "e2")?.markerEnd).toBeUndefined();
+
+    const both = applyDiff(chainDoc(), {
+      ops: [{ op: "update_edge", id: "e2", before: { arrow: null }, after: { arrow: "both" } }],
+    });
+    expect(toFlow(both, "default").edges.find((e) => e.id === "e2")).toMatchObject({
+      markerStart: "url(#topox-arrow)",
+      markerEnd: "url(#topox-arrow)",
+    });
+
+    // Undirected edges never get an arrowhead, even with `arrow` set.
+    const undirected = applyDiff(chainDoc(), {
+      ops: [
+        {
+          op: "update_edge",
+          id: "e1",
+          before: { directed: true, arrow: null },
+          after: { directed: null, arrow: "both" },
+        },
+      ],
+    });
+    const e1 = toFlow(undirected, "default").edges.find((e) => e.id === "e1");
+    expect(e1?.markerStart).toBeUndefined();
+    expect(e1?.markerEnd).toBeUndefined();
+  });
+
   it("projects search matches, the current result, and dimmed nonmatches", () => {
     const doc = chainDoc();
     const { nodes } = toFlow(doc, "default", undefined, {
@@ -294,5 +350,33 @@ describe("group projection", () => {
     const doc = groupedDoc();
     expect(transitiveNodeMembers(doc.graph, "g0").sort()).toEqual(["a", "b", "c"]);
     expect(transitiveNodeMembers(doc.graph, "g1").sort()).toEqual(["a", "b"]);
+  });
+});
+
+describe("node icons", () => {
+  it("resolves explicit icon name first, then falls back to node type", async () => {
+    const { registerNodeIcon, resolveNodeIcon, listNodeIcons, hasNodeIcon } = await import("../src/icons.js");
+    // built-in vocabulary is registered on import (network + app + device)
+    expect(listNodeIcons()).toContain("net-router");
+    expect(listNodeIcons()).toContain("app-backend");
+    expect(listNodeIcons()).toContain("device-sensor");
+    expect(listNodeIcons().length).toBeGreaterThanOrEqual(30);
+    // type fallback
+    expect(resolveNodeIcon(undefined, "net-router")).toBeDefined();
+    // explicit name beats type
+    const routerIcon = resolveNodeIcon(undefined, "net-router");
+    const cloudIcon = resolveNodeIcon("net-cloud", "net-router");
+    expect(cloudIcon).toBeDefined();
+    expect(cloudIcon).not.toBe(routerIcon);
+    // unknown explicit name falls back to type
+    expect(resolveNodeIcon("no-such-icon", "net-router")).toBe(routerIcon);
+    // unknown everything -> undefined (node renders without an icon)
+    expect(resolveNodeIcon("no-such-icon", "no-such-type")).toBeUndefined();
+    // hosts can extend the vocabulary
+    registerNodeIcon("custom-test", (p) => routerIcon!(p));
+    expect(resolveNodeIcon("custom-test", "whatever")).toBeDefined();
+    // hasNodeIcon distinguishes registered names from literal glyphs (emoji)
+    expect(hasNodeIcon("net-router")).toBe(true);
+    expect(hasNodeIcon("\u{1F525}")).toBe(false);
   });
 });

@@ -6,44 +6,44 @@ import { generateDsl, loadLlmConfig, saveLlmConfig, type LlmConfig } from "./ai.
 export function describeOp(op: DiffOp): { sign: string; color: string; text: string } {
   switch (op.op) {
     case "add_node":
-      return { sign: "+", color: "#16a34a", text: `node ${op.node.id} (${op.node.label})` };
+      return { sign: "+", color: "var(--ok)", text: `node ${op.node.id} (${op.node.label})` };
     case "remove_node":
-      return { sign: "−", color: "#dc2626", text: `node ${op.node.id} (${op.node.label})` };
+      return { sign: "−", color: "var(--danger)", text: `node ${op.node.id} (${op.node.label})` };
     case "update_node":
-      return { sign: "~", color: "#d97706", text: `node ${op.id}: ${Object.keys(op.after).join(", ")}` };
+      return { sign: "~", color: "var(--warning)", text: `node ${op.id}: ${Object.keys(op.after).join(", ")}` };
     case "add_edge":
-      return { sign: "+", color: "#16a34a", text: `edge ${op.edge.source} → ${op.edge.target}` };
+      return { sign: "+", color: "var(--ok)", text: `edge ${op.edge.source} → ${op.edge.target}` };
     case "remove_edge":
-      return { sign: "−", color: "#dc2626", text: `edge ${op.edge.source} → ${op.edge.target}` };
+      return { sign: "−", color: "var(--danger)", text: `edge ${op.edge.source} → ${op.edge.target}` };
     case "update_edge":
-      return { sign: "~", color: "#d97706", text: `edge ${op.id}: ${Object.keys(op.after).join(", ")}` };
+      return { sign: "~", color: "var(--warning)", text: `edge ${op.id}: ${Object.keys(op.after).join(", ")}` };
     case "add_group":
-      return { sign: "+", color: "#16a34a", text: `group ${op.group.id}` };
+      return { sign: "+", color: "var(--ok)", text: `group ${op.group.id}` };
     case "remove_group":
-      return { sign: "−", color: "#dc2626", text: `group ${op.group.id}` };
+      return { sign: "−", color: "var(--danger)", text: `group ${op.group.id}` };
     case "update_group":
-      return { sign: "~", color: "#d97706", text: `group ${op.id}` };
+      return { sign: "~", color: "var(--warning)", text: `group ${op.id}` };
     case "update_meta":
-      return { sign: "~", color: "#d97706", text: "graph meta" };
+      return { sign: "~", color: "var(--warning)", text: "graph meta" };
     case "add_view":
-      return { sign: "+", color: "#16a34a", text: `view ${op.view.id}` };
+      return { sign: "+", color: "var(--ok)", text: `view ${op.view.id}` };
     case "remove_view":
-      return { sign: "−", color: "#dc2626", text: `view ${op.view.id}` };
+      return { sign: "−", color: "var(--danger)", text: `view ${op.view.id}` };
     case "set_layout":
-      return { sign: "~", color: "#94a3b8", text: `layout ${op.nodeId}` };
+      return { sign: "~", color: "var(--muted-2)", text: `layout ${op.nodeId}` };
   }
 }
 
 const box = {
-  border: "1px solid #e2e8f0",
+  border: "1px solid var(--border)",
   borderRadius: 8,
-  background: "#fff",
+  background: "var(--surface)",
   padding: 10,
 } as const;
 
 const input = {
   width: "100%",
-  border: "1px solid #d0d7de",
+  border: "1px solid var(--border)",
   borderRadius: 6,
   padding: "5px 8px",
   fontSize: 12.5,
@@ -51,8 +51,8 @@ const input = {
 } as const;
 
 const btn = {
-  border: "1px solid #d0d7de",
-  background: "#fff",
+  border: "1px solid var(--border)",
+  background: "var(--surface)",
   borderRadius: 6,
   padding: "5px 10px",
   fontSize: 12.5,
@@ -139,7 +139,7 @@ export function AiPanel({ doc, dsl, onDslChange, compiled }: AiPanelProps) {
           }}
         />
         <button
-          style={{ ...btn, marginTop: 6, width: "100%", background: "#1f2d3d", color: "#fff", borderColor: "#1f2d3d", opacity: busy ? 0.6 : 1 }}
+          style={{ ...btn, marginTop: 6, width: "100%", background: "var(--inverse-bg)", color: "var(--inverse-text)", borderColor: "var(--inverse-bg)", opacity: busy ? 0.6 : 1 }}
           onClick={() => void runAi()}
           disabled={busy}
         >

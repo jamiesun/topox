@@ -35,14 +35,14 @@ test("insert nodes from the Insert menu, connect them, then undo", async ({ page
   const edges = page.locator(".react-flow__edge");
   const edgeCountBefore = await edges.count();
 
-  await page.getByRole("button", { name: "Insert ▾" }).click();
-  await page.getByRole("menuitem", { name: "Router", exact: false }).first().click();
+  await page.getByRole("button", { name: "Insert…" }).click();
+  await page.getByRole("dialog", { name: "Insert node" }).getByRole("button", { name: "net-router" }).click();
   await expect(inserted).toHaveCount(1);
   await expect(inserted.first()).toContainText("net-router");
   expect(await historyCount(page)).toBe(1);
 
-  await page.getByRole("button", { name: "Insert ▾" }).click();
-  await page.getByRole("menuitem", { name: "Switch", exact: false }).first().click();
+  await page.getByRole("button", { name: "Insert…" }).click();
+  await page.getByRole("dialog", { name: "Insert node" }).getByRole("button", { name: "net-switch" }).click();
   await expect(inserted).toHaveCount(2);
   expect(await historyCount(page)).toBe(2);
 
@@ -114,13 +114,16 @@ test("lock prevents movement until the lock change is undone", async ({ page }) 
   await waitForCanvas(page);
 
   const node = page.locator('.react-flow__node[data-id="fw"]');
+  // Compare transforms only — z-index in the style string flips with selection.
+  const transformOf = (loc: typeof node) =>
+    loc.evaluate((el) => /transform:[^;]+/.exec(el.getAttribute("style") ?? "")?.[0] ?? "");
   await node.click();
   const locked = page.getByRole("checkbox", { name: "locked" });
   await locked.check();
 
   await expect(node.locator('[data-locked="true"]')).toBeVisible();
   expect(await historyCount(page)).toBe(1);
-  const lockedPosition = await node.getAttribute("style");
+  const lockedPosition = await transformOf(node);
   const box = await node.boundingBox();
   expect(box).not.toBeNull();
   await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
@@ -130,12 +133,12 @@ test("lock prevents movement until the lock change is undone", async ({ page }) 
   });
   await page.mouse.up();
 
-  expect(await node.getAttribute("style")).toBe(lockedPosition);
+  expect(await transformOf(node)).toBe(lockedPosition);
   expect(await historyCount(page)).toBe(1);
   await expect(node).toHaveClass(/selected/);
 
   const peer = page.locator('.react-flow__node[data-id="r1"]');
-  const peerPosition = await peer.getAttribute("style");
+  const peerPosition = await transformOf(peer);
   await page.keyboard.down("Shift");
   await page.evaluate(
     () =>
@@ -157,16 +160,22 @@ test("lock prevents movement until the lock change is undone", async ({ page }) 
   );
   await page.mouse.up();
 
-  expect(await node.getAttribute("style")).toBe(lockedPosition);
-  await expect.poll(() => peer.getAttribute("style")).not.toBe(peerPosition);
+  expect(await transformOf(node)).toBe(lockedPosition);
+  await expect.poll(() => transformOf(peer)).not.toBe(peerPosition);
   expect(await historyCount(page)).toBe(2);
 
   await page.getByRole("button", { name: "↩" }).click();
-  await expect.poll(() => peer.getAttribute("style")).toBe(peerPosition);
+  await expect.poll(() => transformOf(peer)).toBe(peerPosition);
   expect(await historyCount(page)).toBe(1);
   await page.getByRole("button", { name: "↩" }).click();
   await expect(node.locator('[data-locked="true"]')).toHaveCount(0);
-  await node.click();
+  // Clear the leftover multi-selection first — clicking an already-selected
+  // node does not shrink the selection to it.
+  await page.locator(".react-flow__pane").click({ position: { x: 5, y: 5 } });
+  await expect(async () => {
+    await node.click();
+    await expect(locked).toBeVisible({ timeout: 500 });
+  }).toPass();
   await expect(locked).not.toBeChecked();
   expect(await historyCount(page)).toBe(0);
 
@@ -184,7 +193,7 @@ test("lock prevents movement until the lock change is undone", async ({ page }) 
   );
   await page.mouse.up();
 
-  await expect.poll(() => node.getAttribute("style")).not.toBe(lockedPosition);
+  await expect.poll(() => transformOf(node)).not.toBe(lockedPosition);
   expect(await historyCount(page)).toBe(1);
 });
 

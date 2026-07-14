@@ -23,6 +23,7 @@ function sampleDoc(): TopoDoc {
       label: "App Server",
       icon: "server",
       ref: "res-42",
+      style: { fill: "#fef3c7", stroke: "#d97706", fontWeight: "bold" },
       attrs: { "rack unit": "A3" },
     },
     { id: "db", type: "net-database", label: "PostgreSQL" },
@@ -80,6 +81,22 @@ describe("mermaid export", () => {
     expect(text).toContain('my_node["A"]');
     expect(text).toContain("my_node --> b");
   });
+
+  it("emits a bidirectional arrow for arrow: both, and forward otherwise", () => {
+    const doc = emptyDoc("g");
+    doc.graph.nodes = [
+      { id: "a", type: "t", label: "A" },
+      { id: "b", type: "t", label: "B" },
+    ];
+    doc.graph.edges = [
+      { id: "e1", source: "a", target: "b", directed: true, arrow: "both" },
+      { id: "e2", source: "a", target: "b", directed: true, arrow: "backward" },
+    ];
+    const text = toMermaid(doc);
+    expect(text).toContain("a <--> b");
+    // Mermaid has no reversed-only arrow; "backward" degrades to a plain forward one.
+    expect(text).toContain("a --> b");
+  });
 });
 
 describe("mermaid import", () => {
@@ -127,6 +144,22 @@ graph LR
       directed: true,
     });
   });
+
+  it("imports <--> as a directed edge with arrow: both (no lossy fallback)", () => {
+    const { doc, warnings } = parseMermaid(`
+flowchart LR
+  a --> b
+  b <--> c
+`);
+    expect(warnings).toEqual([]);
+    expect(doc.graph.edges.find((e) => e.source === "a")).toMatchObject({ directed: true });
+    expect(doc.graph.edges.find((e) => e.source === "a")?.arrow).toBeUndefined();
+    expect(doc.graph.edges.find((e) => e.source === "b")).toMatchObject({
+      target: "c",
+      directed: true,
+      arrow: "both",
+    });
+  });
 });
 
 describe("dot interop", () => {
@@ -151,6 +184,7 @@ describe("dot interop", () => {
     });
     expect(back.graph.nodes.find((node) => node.id === "srv")).toMatchObject({
       icon: "server",
+      style: { fill: "#fef3c7", stroke: "#d97706", fontWeight: "bold" },
       attrs: { "rack unit": "A3" },
     });
     expect(back.graph.groups.find((group) => group.id === "dc")?.children).toEqual(
@@ -182,6 +216,36 @@ describe("dot interop", () => {
     });
     expect(() => parseDot("not a dot graph")).toThrow(/graph or digraph/i);
   });
+
+  it("round-trips arrow direction via the dir attribute", () => {
+    const doc = emptyDoc("g");
+    doc.graph.nodes = [
+      { id: "a", type: "t", label: "A" },
+      { id: "b", type: "t", label: "B" },
+    ];
+    doc.graph.edges = [
+      { id: "e1", source: "a", target: "b", directed: true, arrow: "backward" },
+      { id: "e2", source: "a", target: "b", directed: true, arrow: "both" },
+      { id: "e3", source: "a", target: "b", directed: true },
+    ];
+
+    const text = toDot(doc);
+    expect(text).toContain('"a" -> "b" [id="e1", dir=back]');
+    expect(text).toContain('"a" -> "b" [id="e2", dir=both]');
+    expect(text).toContain('"a" -> "b" [id="e3"]');
+
+    const { doc: back, warnings } = parseDot(text);
+    expect(warnings).toEqual([]);
+    expect(back.graph.edges.find((e) => e.id === "e1")).toMatchObject({
+      directed: true,
+      arrow: "backward",
+    });
+    expect(back.graph.edges.find((e) => e.id === "e2")).toMatchObject({
+      directed: true,
+      arrow: "both",
+    });
+    expect(back.graph.edges.find((e) => e.id === "e3")?.arrow).toBeUndefined();
+  });
 });
 
 describe("graphml interop", () => {
@@ -206,6 +270,7 @@ describe("graphml interop", () => {
         type: "net-server",
         icon: "server",
         ref: "res-42",
+        style: { fill: "#fef3c7", stroke: "#d97706", fontWeight: "bold" },
         attrs: { "rack unit": "A3" },
       });
       expect(back.graph.groups.find((group) => group.id === "dc")?.children).toEqual(
@@ -251,6 +316,34 @@ describe("graphml interop", () => {
       const back = parseGraphML(text).doc;
       expect(back.graph.id).toBe("graph / α");
       expect(back.graph.nodes[0]?.id).toBe("router / α");
+    });
+
+    it("round-trips arrow direction via the topox_edge_arrow key", () => {
+      const doc = emptyDoc("g");
+      doc.graph.nodes = [
+        { id: "a", type: "t", label: "A" },
+        { id: "b", type: "t", label: "B" },
+      ];
+      doc.graph.edges = [
+        { id: "e1", source: "a", target: "b", directed: true, arrow: "backward" },
+        { id: "e2", source: "a", target: "b", directed: true, arrow: "both" },
+        { id: "e3", source: "a", target: "b", directed: true },
+      ];
+
+      const text = toGraphML(doc);
+      expect(text).toContain('<key id="topox_edge_arrow" for="edge" attr.name="arrow"');
+
+      const { doc: back, warnings } = parseGraphML(text);
+      expect(warnings).toEqual([]);
+      expect(back.graph.edges.find((e) => e.id === "e1")).toMatchObject({
+        directed: true,
+        arrow: "backward",
+      });
+      expect(back.graph.edges.find((e) => e.id === "e2")).toMatchObject({
+        directed: true,
+        arrow: "both",
+      });
+      expect(back.graph.edges.find((e) => e.id === "e3")?.arrow).toBeUndefined();
     });
 });
 

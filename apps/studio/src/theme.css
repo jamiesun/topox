@@ -1,0 +1,106 @@
+/*
+ * TopoX Studio design tokens.
+ * Light is the default; dark overrides live under [data-theme="dark"].
+ * The --topox-* group also themes the canvas package (read via var() fallbacks).
+ */
+:root {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #fafbfc;
+  --surface-3: #f1f5f9;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --border-soft: #eef1f4;
+  --text: #1f2d3d;
+  --text-secondary: #475569;
+  --muted: #64748b;
+  --muted-2: #94a3b8;
+  --accent: #2563eb;
+  --accent-soft: #eff6ff;
+  --danger: #dc2626;
+  --danger-bg: #fff5f5;
+  --danger-text: #c53030;
+  --warning: #d97706;
+  --warn-bg: #fffbeb;
+  --warn-border: #fde68a;
+  --warn-text: #92400e;
+  --ok: #16a34a;
+  --inverse-bg: #1f2d3d;
+  --inverse-text: #ffffff;
+  --overlay: rgba(15, 23, 42, 0.4);
+  --shadow-panel: 0 12px 40px rgba(15, 23, 42, 0.25);
+
+  --topox-node-bg: #ffffff;
+  --topox-node-border: #d0d7de;
+  --topox-node-text: #1f2d3d;
+  --topox-muted: #475569;
+  --topox-grid: #e5e9ef;
+  --topox-proxy-bg: linear-gradient(#f8fafc, #eef2f7);
+  --topox-proxy-shadow: 2px 2px 0 #dbe2ea, 4px 4px 0 #e8edf3;
+}
+
+[data-theme="dark"] {
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --surface-2: #16203a;
+  --surface-3: #1c2a44;
+  --border: #334155;
+  --border-strong: #475569;
+  --border-soft: #263243;
+  --text: #e2e8f0;
+  --text-secondary: #cbd5e1;
+  --muted: #94a3b8;
+  --muted-2: #64748b;
+  --accent: #3b82f6;
+  --accent-soft: #1e3a5f;
+  --danger: #f87171;
+  --danger-bg: #3b1620;
+  --danger-text: #fca5a5;
+  --warning: #fbbf24;
+  --warn-bg: #33270e;
+  --warn-border: #78591b;
+  --warn-text: #fcd34d;
+  --ok: #4ade80;
+  --inverse-bg: #e2e8f0;
+  --inverse-text: #0f172a;
+  --overlay: rgba(2, 6, 23, 0.6);
+  --shadow-panel: 0 12px 40px rgba(0, 0, 0, 0.5);
+
+  --topox-node-bg: #1e293b;
+  --topox-node-border: #475569;
+  --topox-node-text: #e2e8f0;
+  --topox-muted: #94a3b8;
+  --topox-grid: #24324a;
+  --topox-proxy-bg: linear-gradient(#1e293b, #16203a);
+  --topox-proxy-shadow: 2px 2px 0 #0b1120, 4px 4px 0 #0d1526;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+button {
+  font-family: inherit;
+  color: inherit;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+  background: var(--surface);
+  color: var(--text);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted-2);
+}

@@ -122,6 +122,11 @@ function buildEdge(
       case "weight":
         edge.weight = Number(value);
         break;
+      case "arrow": {
+        const v = String(value);
+        if (v === "forward" || v === "backward" || v === "both") edge.arrow = v;
+        break;
+      }
       default:
         attrs[key] = value;
     }
@@ -292,6 +297,9 @@ export function compileDsl(source: string, doc: TopoDoc): CompileResult {
             } else if (key === "directed") {
               if (value === true) next.directed = true;
               else delete next.directed;
+            } else if (key === "arrow") {
+              if (value === "forward" || value === "backward" || value === "both") next.arrow = value;
+              else delete next.arrow;
             } else if (value === null) delete attrs[key];
             else attrs[key] = value;
           }
