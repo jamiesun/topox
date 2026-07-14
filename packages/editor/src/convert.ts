@@ -10,6 +10,13 @@ import type {
   View,
 } from "@talkincode/topox-core";
 
+export type DiffVisualState = "added" | "updated" | "removed" | "layout";
+
+export interface DiffVisualProjection {
+  nodeStates?: ReadonlyMap<string, DiffVisualState>;
+  edgeStates?: ReadonlyMap<string, DiffVisualState>;
+}
+
 export interface TopoNodeData extends Record<string, unknown> {
   label: string;
   nodeType: string;
@@ -27,6 +34,8 @@ export interface TopoNodeData extends Record<string, unknown> {
   searchMatch?: boolean;
   searchCurrent?: boolean;
   searchDimmed?: boolean;
+  /** Ephemeral proposal/diff projection; never stored in the document. */
+  diffState?: DiffVisualState;
 }
 
 /** Data for group container (expanded) and proxy (collapsed) nodes. */
@@ -43,6 +52,7 @@ export interface TopoGroupData extends Record<string, unknown> {
   searchMatch?: boolean;
   searchCurrent?: boolean;
   searchDimmed?: boolean;
+  diffState?: DiffVisualState;
 }
 
 export type TopoRFNode = RFNode<TopoNodeData | TopoGroupData>;
@@ -189,6 +199,7 @@ export function toFlow(
   viewId: string,
   runtime?: ResolvedRuntime,
   search?: SearchProjection,
+  diffVisual?: DiffVisualProjection,
 ): { nodes: TopoRFNode[]; edges: RFEdge[] } {
   const { graph } = doc;
   const view: View | undefined = doc.views.find((v) => v.id === viewId) ?? doc.views[0];
@@ -320,6 +331,7 @@ export function toFlow(
   for (const [gid, box] of proxyBox) {
     const g = idx.byId.get(gid);
     if (!g) continue;
+    const diffState = diffVisual?.nodeStates?.get(gid);
     const members = transitiveNodeMembers(graph, gid);
     const allMembersLocked =
       members.length > 0 && members.every((member) => nodeById.get(member)?.locked === true);
@@ -345,6 +357,7 @@ export function toFlow(
         depth: idx.depth.get(gid) ?? 0,
         ...(Object.keys(summary).length > 0 ? { statusSummary: summary } : {}),
         ...projectSearch(members, search),
+        ...(diffState !== undefined ? { diffState } : {}),
       },
     });
   }
@@ -354,6 +367,7 @@ export function toFlow(
     const box = nodeBox.get(node.id);
     if (!box) continue;
     const rt = runtime?.nodes.get(node.id);
+    const diffState = diffVisual?.nodeStates?.get(node.id);
     nodes.push({
       id: node.id,
       type: "topo",
@@ -372,6 +386,7 @@ export function toFlow(
         ...(rt?.message !== undefined ? { message: rt.message } : {}),
         ...(rt?.metrics !== undefined ? { metrics: rt.metrics } : {}),
         ...projectSearch([node.id], search),
+        ...(diffState !== undefined ? { diffState } : {}),
       },
     });
   }
@@ -425,10 +440,27 @@ export function toFlow(
         ...arrowMarkers(edge.directed === true, edge.arrow),
         ...(rt?.active === true ? { animated: true } : {}),
         style: {
-          stroke: edge.color ?? (rt?.active === true ? "#2563eb" : "#9aa4b2"),
-          strokeWidth: rt?.active === true ? 2 : 1.5,
+          stroke:
+            diffVisual?.edgeStates?.get(edge.id) === "removed"
+              ? "#dc2626"
+              : diffVisual?.edgeStates?.get(edge.id) === "added"
+                ? "#16a34a"
+                : diffVisual?.edgeStates?.get(edge.id) === "updated"
+                  ? "#d97706"
+                  : (edge.color ?? (rt?.active === true ? "#2563eb" : "#9aa4b2")),
+          strokeWidth: diffVisual?.edgeStates?.has(edge.id) === true ? 2.5 : rt?.active === true ? 2 : 1.5,
+          ...(diffVisual?.edgeStates?.get(edge.id) === "removed" ? { strokeDasharray: "5 4", opacity: 0.62 } : {}),
         },
+        ...(diffVisual?.edgeStates?.get(edge.id) !== undefined
+          ? { label: `${diffVisual.edgeStates.get(edge.id)!.toUpperCase()}${label !== undefined ? ` · ${label}` : ""}` }
+          : {}),
+        ...(diffVisual?.edgeStates?.get(edge.id) !== undefined
+          ? { labelStyle: { fill: "#334155", fontWeight: 700, fontSize: 10 } }
+          : liveLabel !== undefined
+            ? { labelStyle: { fill: "#2563eb", fontWeight: 600, fontSize: 10 } }
+            : {}),
         ...(liveLabel !== undefined
+          && diffVisual?.edgeStates?.get(edge.id) === undefined
           ? { labelStyle: { fill: "#2563eb", fontWeight: 600, fontSize: 10 } }
           : {}),
         type: "default",

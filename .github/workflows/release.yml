@@ -42,6 +42,7 @@ jobs:
             "@talkincode/topox-editor"
             "@talkincode/topox-interop"
             "@talkincode/topox-embed"
+            "@talkincode/topox-mcp"
           )
 
           for pkg in "${packages[@]}"; do

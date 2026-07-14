@@ -40,6 +40,7 @@ import {
   toFlow,
   transitiveNodeMembers,
   type SearchProjection,
+  type DiffVisualProjection,
   type TopoGroupData,
   type TopoNodeData,
   type TopoRFNode,
@@ -57,6 +58,8 @@ export interface TopoCanvasProps {
   runtime?: ResolvedRuntime;
   /** Read-only search projection and current result to focus. */
   search?: SearchProjection;
+  /** Read-only proposal/diff projection used for visual previews. */
+  diffVisual?: DiffVisualProjection;
   /** Visual theme for the canvas chrome (React Flow controls, minimap, background). */
   colorMode?: "light" | "dark";
 }
@@ -97,6 +100,13 @@ const sideHandles = (
 
 const TopoNode = memo(function TopoNode({ data, selected }: NodeProps<TopoRFNode>) {
   const d = data as TopoNodeData;
+  const diffColors = {
+    added: "#16a34a",
+    updated: "#d97706",
+    removed: "#dc2626",
+    layout: "#2563eb",
+  } as const;
+  const diffColor = d.diffState !== undefined ? diffColors[d.diffState] : undefined;
   const accent = typePalette[d.nodeType] ?? "#475569";
   const ns = d.nodeStyle;
   const renderIcon = resolveNodeIcon(d.icon, d.nodeType);
@@ -109,6 +119,8 @@ const TopoNode = memo(function TopoNode({ data, selected }: NodeProps<TopoRFNode
       ? "#2563eb"
       : d.searchMatch === true
         ? "#f59e0b"
+        : diffColor !== undefined
+          ? diffColor
         : d.status === "error"
           ? statusPalette.error
           : selected
@@ -119,6 +131,12 @@ const TopoNode = memo(function TopoNode({ data, selected }: NodeProps<TopoRFNode
       ? "0 0 0 4px rgba(37,99,235,.28), 0 4px 14px rgba(37,99,235,.18)"
       : d.searchMatch === true
         ? "0 0 0 3px rgba(245,158,11,.28), 0 2px 8px rgba(245,158,11,.14)"
+        : d.diffState === "added"
+          ? "0 0 0 3px rgba(22,163,74,.22), 0 4px 14px rgba(22,163,74,.12)"
+          : d.diffState === "updated"
+            ? "0 0 0 3px rgba(217,119,6,.24), 0 4px 14px rgba(217,119,6,.12)"
+            : d.diffState === "removed"
+              ? "0 0 0 3px rgba(220,38,38,.22), 0 4px 14px rgba(220,38,38,.12)"
         : selected
           ? `0 0 0 3px ${accent}22`
           : "0 1px 2px rgba(0,0,0,.06)";
@@ -130,7 +148,7 @@ const TopoNode = memo(function TopoNode({ data, selected }: NodeProps<TopoRFNode
       data-locked={d.locked === true ? "true" : undefined}
       style={{
         border: `1.5px ${ns?.borderStyle ?? "solid"} ${borderColor}`,
-        borderLeft: `4px ${ns?.borderStyle ?? "solid"} ${ns?.stroke ?? accent}`,
+        borderLeft: `4px ${d.diffState === "removed" ? "dashed" : (ns?.borderStyle ?? "solid")} ${diffColor ?? ns?.stroke ?? accent}`,
         borderRadius: 8,
         background:
           d.searchCurrent === true
@@ -143,11 +161,33 @@ const TopoNode = memo(function TopoNode({ data, selected }: NodeProps<TopoRFNode
         boxShadow,
         fontFamily: "ui-sans-serif, system-ui, sans-serif",
         opacity: d.searchDimmed === true ? 0.2 : d.status === "offline" ? 0.55 : 1,
+        filter: d.diffState === "removed" ? "grayscale(.45)" : undefined,
         position: "relative",
         transition: "opacity 160ms ease, box-shadow 160ms ease, background 160ms ease",
       }}
     >
       {sideHandles}
+      {d.diffState !== undefined ? (
+        <span
+          data-diff-state={d.diffState}
+          title={`Proposal ${d.diffState}`}
+          style={{
+            position: "absolute",
+            top: -9,
+            right: 8,
+            borderRadius: 999,
+            background: diffColor,
+            color: "#fff",
+            fontSize: 9,
+            fontWeight: 800,
+            letterSpacing: 0.6,
+            padding: "2px 6px",
+            boxShadow: "0 2px 5px rgba(15,23,42,.18)",
+          }}
+        >
+          {d.diffState.toUpperCase()}
+        </span>
+      ) : null}
       {statusColor !== undefined ? (
         <span
           title={`${d.status}${d.message !== undefined ? `: ${d.message}` : ""}`}
@@ -291,6 +331,12 @@ const TopoGroupNode = memo(function TopoGroupNode({ data, selected }: NodeProps<
 
   // proxy: collapsed group stands in for its hidden members
   const summary = d.statusSummary;
+  const diffColor =
+    d.diffState === "added" ? "#16a34a" :
+    d.diffState === "updated" ? "#d97706" :
+    d.diffState === "removed" ? "#dc2626" :
+    d.diffState === "layout" ? "#2563eb" :
+    undefined;
   return (
     <div
       data-search-match={d.searchMatch === true ? "true" : undefined}
@@ -306,7 +352,7 @@ const TopoGroupNode = memo(function TopoGroupNode({ data, selected }: NodeProps<
               ? "#f59e0b"
               : selected
                 ? "#6366f1"
-                : "#b6c2d2"
+                : diffColor ?? "#b6c2d2"
         }`,
         borderRadius: 10,
         background:
@@ -332,6 +378,25 @@ const TopoGroupNode = memo(function TopoGroupNode({ data, selected }: NodeProps<
       }}
     >
       {sideHandles}
+      {d.diffState !== undefined ? (
+        <span
+          data-diff-state={d.diffState}
+          style={{
+            position: "absolute",
+            top: -9,
+            right: 8,
+            borderRadius: 999,
+            background: diffColor,
+            color: "#fff",
+            fontSize: 9,
+            fontWeight: 800,
+            letterSpacing: 0.6,
+            padding: "2px 6px",
+          }}
+        >
+          {d.diffState.toUpperCase()}
+        </span>
+      ) : null}
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         {!readOnly ? (
           <button
@@ -418,6 +483,7 @@ export function TopoCanvas({
   readOnly = false,
   runtime,
   search,
+  diffVisual,
   colorMode = "light",
 }: TopoCanvasProps) {
   const view = doc.views.find((v) => v.id === viewId) ?? doc.views[0];
@@ -425,7 +491,7 @@ export function TopoCanvas({
   // React Flow's controlled-flow pattern: the canvas owns transient interaction
   // state (drag positions, selection) locally so dragging stays at 60fps; the
   // document is only touched once, as a diff, when the gesture ends.
-  const [flow, setFlow] = useState(() => toFlow(doc, viewId, runtime, search));
+  const [flow, setFlow] = useState(() => toFlow(doc, viewId, runtime, search, diffVisual));
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuides>({});
   const mounted = useRef(false);
   const flowInstance = useRef<ReactFlowInstance<TopoRFNode, RFEdge> | null>(null);
@@ -443,7 +509,7 @@ export function TopoCanvas({
       mounted.current = true;
       return; // initial state already computed
     }
-    const fresh = toFlow(doc, viewId, runtime, search);
+    const fresh = toFlow(doc, viewId, runtime, search, diffVisual);
     setFlow((prev) => {
       const prevNodes = new Map(prev.nodes.map((n) => [n.id, n]));
       const prevEdges = new Map(prev.edges.map((e) => [e.id, e]));
@@ -466,12 +532,12 @@ export function TopoCanvas({
         }),
       };
     });
-  }, [doc, viewId, runtime, search]);
+  }, [doc, viewId, runtime, search, diffVisual]);
 
   const focusSearchResult = useCallback(
     (instance: ReactFlowInstance<TopoRFNode, RFEdge>) => {
       if (search?.currentNodeId === undefined) return;
-      const target = toFlow(doc, viewId, undefined, search).nodes.find(
+      const target = toFlow(doc, viewId, undefined, search, diffVisual).nodes.find(
         (node) => node.data.searchCurrent === true,
       );
       if (target === undefined) return;
@@ -482,7 +548,7 @@ export function TopoCanvas({
         duration: 280,
       });
     },
-    [doc, search, viewId],
+    [doc, search, viewId, diffVisual],
   );
 
   useEffect(() => {

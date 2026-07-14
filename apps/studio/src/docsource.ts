@@ -1,4 +1,4 @@
-import { validateDoc, type TopoDoc } from "@talkincode/topox-core";
+import { parseGraphProposal, validateDoc, type GraphProposal, type TopoDoc } from "@talkincode/topox-core";
 
 /**
  * Shared-studio protocol. A host app links to the studio with:
@@ -21,7 +21,7 @@ export interface DocSource {
 }
 
 /** Returns `raw` when it resolves to a same-origin http(s) URL, else null. */
-function sameOriginUrl(raw: string, base: string): string | null {
+export function sameOriginUrl(raw: string, base: string): string | null {
   try {
     const baseUrl = new URL(base);
     const url = new URL(raw, baseUrl);
@@ -31,6 +31,14 @@ function sameOriginUrl(raw: string, base: string): string | null {
   } catch {
     return null;
   }
+}
+
+export function parseProposalSource(
+  search: string,
+  base: string = window.location.href,
+): string | null {
+  const raw = new URLSearchParams(search).get("proposal");
+  return raw !== null ? sameOriginUrl(raw, base) : null;
 }
 
 export function parseDocSource(
@@ -69,6 +77,12 @@ export async function fetchDoc(url: string): Promise<TopoDoc> {
   const problems = validateDoc(doc).filter((i) => i.severity === "error");
   if (problems.length > 0) throw new Error(problems.map((p) => p.message).join("; "));
   return doc;
+}
+
+export async function fetchProposal(url: string): Promise<GraphProposal> {
+  const res = await fetch(url, { credentials: "include", headers: { accept: "application/json" } });
+  if (!res.ok) throw new Error(`proposal load failed: HTTP ${res.status}`);
+  return parseGraphProposal(await res.json());
 }
 
 export async function saveDocTo(url: string, doc: TopoDoc): Promise<void> {

@@ -21,6 +21,10 @@ import {
   resolveRuntime,
   RuntimeTimeline,
   serializeRuntimeSnapshot,
+  hashDocGraph,
+  parseGraphProposal,
+  previewGraphProposal,
+  summarizeDiff,
 } from "../src/index.js";
 import type { GraphDiff, Node, TopoDoc } from "../src/index.js";
 
@@ -146,6 +150,92 @@ describe("applyDiff", () => {
     const node = next.graph.nodes.find((n) => n.id === "a")!;
     expect(node.label).toBe("R-A");
     expect("ref" in node).toBe(false);
+  });
+});
+
+describe("graph hash and proposals", () => {
+  it("hashes graph semantics without depending on key order or layout", () => {
+    const doc = fixtureDoc();
+    const sameGraphDifferentLayout: TopoDoc = {
+      graph: JSON.parse(JSON.stringify(doc.graph)) as TopoDoc["graph"],
+      views: [{ id: "default", name: "Default", layout: { a: { x: 999, y: -20 } } }],
+    };
+    const reorderedGraph: TopoDoc = {
+      ...doc,
+      graph: {
+        schemaVersion: doc.graph.schemaVersion,
+        id: doc.graph.id,
+        groups: doc.graph.groups,
+        edges: doc.graph.edges,
+        nodes: doc.graph.nodes,
+        meta: doc.graph.meta,
+      },
+    };
+    expect(hashDocGraph(sameGraphDifferentLayout)).toBe(hashDocGraph(doc));
+    expect(hashDocGraph(reorderedGraph)).toBe(hashDocGraph(doc));
+
+    const changed = applyDiff(doc, {
+      ops: [{ op: "update_node", id: "a", before: { label: "Router A" }, after: { label: "Router A+" } }],
+    });
+    expect(hashDocGraph(changed)).not.toBe(hashDocGraph(doc));
+  });
+
+  it("parses and previews a graph proposal without mutating the base document", () => {
+    const doc = fixtureDoc();
+    const diff: GraphDiff = {
+      summary: "rename",
+      ops: [{ op: "update_node", id: "a", before: { label: "Router A" }, after: { label: "Router A+" } }],
+    };
+    const proposal = parseGraphProposal({
+      format: "topox-proposal",
+      version: 1,
+      proposalId: "p1",
+      docId: "g1",
+      baseHash: hashDocGraph(doc),
+      createdAt: "2026-07-14T00:00:00.000Z",
+      source: "test",
+      diff,
+      summary: summarizeDiff(diff),
+    });
+
+    const preview = previewGraphProposal(doc, proposal, { verifyBase: true });
+    expect(preview.state).toBe("ready");
+    expect(preview.doc?.graph.nodes.find((n) => n.id === "a")?.label).toBe("Router A+");
+    expect(doc.graph.nodes.find((n) => n.id === "a")?.label).toBe("Router A");
+  });
+
+  it("reports stale and unverifiable proposal states explicitly", () => {
+    const doc = fixtureDoc();
+    const proposal = parseGraphProposal({
+      format: "topox-proposal",
+      version: 1,
+      proposalId: "p1",
+      docId: "g1",
+      baseHash: "fnv1a64:deadbeef",
+      createdAt: "2026-07-14T00:00:00.000Z",
+      source: "test",
+      diff: { ops: [] },
+      summary: [],
+    });
+    expect(previewGraphProposal(doc, proposal, { verifyBase: true }).state).toBe("stale");
+    expect(previewGraphProposal(doc, proposal).state).toBe("unverifiable");
+  });
+
+  it("rejects malformed proposal artifacts", () => {
+    expect(() => parseGraphProposal({ format: "topox-proposal", version: 2 })).toThrow(
+      /unsupported proposal version/,
+    );
+    expect(() =>
+      parseGraphProposal({
+        format: "topox-proposal",
+        version: 1,
+        proposalId: "p1",
+        docId: "g1",
+        baseHash: "h",
+        createdAt: "now",
+        source: "test",
+      }),
+    ).toThrow(/diff\.ops/);
   });
 });
 

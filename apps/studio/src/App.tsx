@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DiffOp, GraphDiff, Node, NodeLayout, RuntimeState, TopoDoc } from "@talkincode/topox-core";
+import type { DiffOp, GraphDiff, GraphProposal, Node, NodeLayout, RuntimeState, TopoDoc } from "@talkincode/topox-core";
 import {
   applyDiff,
   applyRuntimeEvent,
   emptyDoc,
   emptyRuntime,
   History,
+  hashDocGraph,
+  parseGraphProposal,
   inventoryToCsv,
   makeDuplicateNodes,
   makeGroupOps,
@@ -14,6 +16,7 @@ import {
   makeRemoveOps,
   makeUngroupOps,
   parseRuntimeSnapshot,
+  previewGraphProposal,
   resolveRuntime,
   RuntimeTimeline,
   searchNodes,
@@ -22,7 +25,7 @@ import {
   validateDoc,
 } from "@talkincode/topox-core";
 import { compileDsl } from "@talkincode/topox-dsl";
-import { autoLayoutDiff, statusPalette, toFlow, TopoCanvas, type LayoutDirection } from "@talkincode/topox-editor";
+import { autoLayoutDiff, statusPalette, toFlow, TopoCanvas, type DiffVisualProjection, type DiffVisualState, type LayoutDirection } from "@talkincode/topox-editor";
 import {
   docFromYaml,
   docToYaml,
@@ -35,7 +38,7 @@ import {
 } from "@talkincode/topox-interop";
 import { AiPanel } from "./AiPanel.js";
 import { demoDoc } from "./demo.js";
-import { fetchDoc, parseDocSource, saveDocTo } from "./docsource.js";
+import { fetchDoc, fetchProposal, parseDocSource, parseProposalSource, saveDocTo } from "./docsource.js";
 import { Dropdown } from "./Dropdown.js";
 import { IconPickerDialog, typeLabel } from "./IconPicker.js";
 import { useTheme } from "./theme.js";
@@ -109,6 +112,13 @@ const invCell = {
   borderBottom: "1px solid var(--border-soft)",
 } as const;
 
+const panelBox = {
+  border: "1px solid var(--border)",
+  borderRadius: 8,
+  background: "var(--surface)",
+  padding: 10,
+} as const;
+
 /**
  * Borderless in-place cell editor for the inventory table. Commits on blur or
  * Enter — one invertible diff per edit, same as the Inspector fields.
@@ -174,6 +184,92 @@ function withAutoLayout(doc: TopoDoc): TopoDoc {
   return applyDiff(doc, autoLayoutDiff(doc, doc.views[0]?.id ?? "default"));
 }
 
+function rankDiffState(current: DiffVisualState | undefined, next: DiffVisualState): DiffVisualState {
+  const rank: Record<DiffVisualState, number> = { removed: 4, added: 3, updated: 2, layout: 1 };
+  return current === undefined || rank[next] > rank[current] ? next : current;
+}
+
+function diffVisualFrom(diff: GraphDiff | null): DiffVisualProjection | undefined {
+  if (diff === null || diff.ops.length === 0) return undefined;
+  const nodeStates = new Map<string, DiffVisualState>();
+  const edgeStates = new Map<string, DiffVisualState>();
+  for (const op of diff.ops) {
+    switch (op.op) {
+      case "add_node":
+        nodeStates.set(op.node.id, rankDiffState(nodeStates.get(op.node.id), "added"));
+        break;
+      case "remove_node":
+        nodeStates.set(op.node.id, rankDiffState(nodeStates.get(op.node.id), "removed"));
+        break;
+      case "update_node":
+        nodeStates.set(op.id, rankDiffState(nodeStates.get(op.id), "updated"));
+        break;
+      case "add_edge":
+        edgeStates.set(op.edge.id, rankDiffState(edgeStates.get(op.edge.id), "added"));
+        break;
+      case "remove_edge":
+        edgeStates.set(op.edge.id, rankDiffState(edgeStates.get(op.edge.id), "removed"));
+        break;
+      case "update_edge":
+        edgeStates.set(op.id, rankDiffState(edgeStates.get(op.id), "updated"));
+        break;
+      case "set_layout":
+        nodeStates.set(op.nodeId, rankDiffState(nodeStates.get(op.nodeId), "layout"));
+        break;
+      case "add_group":
+        nodeStates.set(op.group.id, rankDiffState(nodeStates.get(op.group.id), "added"));
+        break;
+      case "remove_group":
+        nodeStates.set(op.group.id, rankDiffState(nodeStates.get(op.group.id), "removed"));
+        break;
+      case "update_group":
+        nodeStates.set(op.id, rankDiffState(nodeStates.get(op.id), "updated"));
+        break;
+      case "add_view":
+      case "remove_view":
+      case "update_meta":
+        break;
+    }
+  }
+  return { nodeStates, edgeStates };
+}
+
+function visualDocWithRemovedEntities(base: TopoDoc, preview: TopoDoc, diff: GraphDiff | null): TopoDoc {
+  if (diff === null) return preview;
+  const next: TopoDoc = structuredClone(preview);
+  const nodes = new Map(next.graph.nodes.map((node) => [node.id, node]));
+  const edges = new Map(next.graph.edges.map((edge) => [edge.id, edge]));
+  const groups = new Map(next.graph.groups.map((group) => [group.id, group]));
+  const baseViewById = new Map(base.views.map((view) => [view.id, view]));
+  for (const op of diff.ops) {
+    if (op.op === "remove_node" && !nodes.has(op.node.id)) {
+      next.graph.nodes.push(op.node);
+      nodes.set(op.node.id, op.node);
+    } else if (op.op === "remove_edge" && !edges.has(op.edge.id)) {
+      next.graph.edges.push(op.edge);
+      edges.set(op.edge.id, op.edge);
+    } else if (op.op === "remove_group" && !groups.has(op.group.id)) {
+      next.graph.groups.push(op.group);
+      groups.set(op.group.id, op.group);
+    } else if (op.op === "set_layout" && op.after === null && op.before !== null) {
+      const view = next.views.find((candidate) => candidate.id === op.viewId);
+      if (view !== undefined && view.layout[op.nodeId] === undefined) {
+        view.layout[op.nodeId] = op.before;
+      }
+    }
+  }
+  for (const view of next.views) {
+    const baseView = baseViewById.get(view.id);
+    if (baseView === undefined) continue;
+    for (const op of diff.ops) {
+      if (op.op === "remove_node" && baseView.layout[op.node.id] !== undefined) {
+        view.layout[op.node.id] = baseView.layout[op.node.id]!;
+      }
+    }
+  }
+  return next;
+}
+
 export function App() {
   const historyRef = useRef(new History(demoDoc()));
   const theme = useTheme();
@@ -198,12 +294,16 @@ export function App() {
   const docSource = useMemo(() => parseDocSource(window.location.search), []);
   const [savedDoc, setSavedDoc] = useState<TopoDoc | null>(null);
   const [project, setProject] = useState<ProjectMeta | null>(null);
+  const proposalSource = useMemo(() => parseProposalSource(window.location.search), []);
+  const [proposal, setProposal] = useState<GraphProposal | null>(null);
+  const [proposalError, setProposalError] = useState<string | null>(null);
   const timelineRef = useRef(new RuntimeTimeline({ checkpointInterval: 25 }));
   const runtimeRef = useRef(runtime);
   runtimeRef.current = runtime;
   const simulationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const snapshotInputRef = useRef<HTMLInputElement>(null);
+  const proposalInputRef = useRef<HTMLInputElement>(null);
 
   const history = historyRef.current;
   const viewId = doc.views[0]?.id ?? "default";
@@ -247,6 +347,25 @@ export function App() {
       cancelled = true;
     };
   }, [docSource]);
+
+  useEffect(() => {
+    if (!proposalSource) return;
+    let cancelled = false;
+    fetchProposal(proposalSource)
+      .then((loaded) => {
+        if (cancelled) return;
+        setProposal(loaded);
+        setProposalError(null);
+        setSideTab("ai");
+        setTab("canvas");
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setProposalError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [proposalSource]);
 
   // Local projects: restore the last-open project on startup (shared mode wins).
   useEffect(() => {
@@ -406,6 +525,19 @@ export function App() {
     }
   }, []);
 
+  const openProposalFile = useCallback((raw: string) => {
+    try {
+      const loaded = parseGraphProposal(JSON.parse(raw));
+      setProposal(loaded);
+      setProposalError(null);
+      setSideTab("ai");
+      setTab("canvas");
+    } catch (e) {
+      setProposal(null);
+      setProposalError(`proposal import failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, []);
+
   const handleSelect = useCallback((nodeIds: string[], edgeIds: string[], groupIds: string[] = []) => {
     const same = (prev: string[], next: string[]) =>
       prev.length === next.length && prev.every((v, i) => v === next[i]);
@@ -512,10 +644,10 @@ export function App() {
     [resolvedRuntime, selection],
   );
 
-  // AI/DSL pipeline: DSL text compiles live into a staged diff; the canvas
-  // previews the result read-only until the user applies or discards.
+  // AI/DSL and MCP proposal pipeline: text/proposal diffs compile into a staged
+  // read-only visual preview until the user applies or discards.
   const compiled = useMemo(() => (dsl.trim() === "" ? null : compileDsl(dsl, doc)), [dsl, doc]);
-  const previewDoc = useMemo(() => {
+  const dslPreviewDoc = useMemo(() => {
     if (!compiled || compiled.diff.ops.length === 0) return null;
     try {
       return applyDiff(doc, compiled.diff);
@@ -523,20 +655,54 @@ export function App() {
       return null;
     }
   }, [compiled, doc]);
+  const proposalPreview = useMemo(
+    () => (proposal !== null ? previewGraphProposal(doc, proposal, { verifyBase: docSource !== null }) : null),
+    [doc, docSource, proposal],
+  );
+  const activePreviewDiff = proposal?.diff ?? compiled?.diff ?? null;
+  const semanticPreviewDoc =
+    proposal !== null
+      ? proposalPreview?.state === "ready"
+        ? proposalPreview.doc ?? null
+        : null
+      : dslPreviewDoc;
+  const previewDoc = useMemo(
+    () => (semanticPreviewDoc !== null ? visualDocWithRemovedEntities(doc, semanticPreviewDoc, activePreviewDiff) : null),
+    [activePreviewDiff, doc, semanticPreviewDoc],
+  );
+  const previewDiffVisual = useMemo(() => diffVisualFrom(activePreviewDiff), [activePreviewDiff]);
+  const proposalBaseState = proposal !== null ? proposalPreview?.state ?? "invalid" : null;
+  const currentGraphHash = useMemo(() => hashDocGraph(doc), [doc]);
+  const stagedOpCount = proposal?.diff.ops.length ?? compiled?.diff.ops.length ?? 0;
+  const canApplyPreview =
+    proposal !== null ? proposalPreview?.state === "ready" && proposal.diff.ops.length > 0 : previewDoc !== null;
+  const previewBannerVisible = previewDoc !== null || proposal !== null || proposalError !== null;
+  const previewLocked = previewDoc !== null || proposal !== null;
 
   const applyStaged = useCallback(() => {
+    if (proposal !== null) {
+      if (proposalPreview?.state !== "ready" || proposal.diff.ops.length === 0) return;
+      pushDiff({ ...proposal.diff, origin: `mcp/proposal:${proposal.proposalId}` });
+      setProposal(null);
+      setProposalError(null);
+      return;
+    }
     if (!compiled || compiled.diff.ops.length === 0) return;
     pushDiff({ ...compiled.diff, origin: "ai/dsl" });
     setDsl("");
-  }, [compiled, pushDiff]);
+  }, [compiled, proposal, proposalPreview, pushDiff]);
 
-  const discardStaged = useCallback(() => setDsl(""), []);
+  const discardStaged = useCallback(() => {
+    setDsl("");
+    setProposal(null);
+    setProposalError(null);
+  }, []);
   const inventory = useMemo(() => toInventory(doc.graph), [doc.graph]);
 
   /** Inline inventory edit: one update_node diff per committed cell. */
   const editNodeField = useCallback(
     (nodeId: string, field: "label" | "type" | "ref" | "tags" | "description", raw: string) => {
-      if (previewDoc !== null) return;
+      if (previewLocked) return;
       const node = history.doc.graph.nodes.find((n) => n.id === nodeId);
       if (!node) return;
       const next = { ...node } as Record<string, unknown>;
@@ -554,7 +720,7 @@ export function App() {
       const op = makeNodeUpdate(node, next as unknown as Node);
       if (op) pushDiff({ origin: "user", summary: `edit ${nodeId}.${field}`, ops: [op] });
     },
-    [history, previewDoc, pushDiff],
+    [history, previewLocked, pushDiff],
   );
   const matches = useMemo(() => searchNodes(doc.graph, query), [doc.graph, query]);
   const matchedIds = useMemo(() => new Set(matches.map((n) => n.id)), [matches]);
@@ -604,7 +770,7 @@ export function App() {
 
   const addNode = useCallback(
     (type: string) => {
-      if (previewDoc !== null) return;
+      if (previewLocked) return;
       const current = history.doc;
       const existing = new Set(current.graph.nodes.map((n) => n.id));
       const id = freshId("n", existing);
@@ -627,11 +793,11 @@ export function App() {
       }
       pushDiff({ origin: "user", summary: `add ${type} "${label}"`, ops });
     },
-    [history, previewDoc, pushDiff, viewId],
+    [history, previewLocked, pushDiff, viewId],
   );
 
   const connectSelected = useCallback(() => {
-    if (selection.length !== 2 || previewDoc !== null) return;
+    if (selection.length !== 2 || previewLocked) return;
     const [source, target] = selection as [string, string];
     const existing = new Set(history.doc.graph.edges.map((e) => e.id));
     pushDiff({
@@ -641,10 +807,10 @@ export function App() {
         { op: "add_edge", edge: { id: freshId("e", existing), source, target, directed: true } },
       ],
     });
-  }, [history, previewDoc, pushDiff, selection]);
+  }, [history, previewLocked, pushDiff, selection]);
 
   const duplicateSelected = useCallback(() => {
-    if (selection.length === 0 || previewDoc !== null) return;
+    if (selection.length === 0 || previewLocked) return;
     const positions: Record<string, NodeLayout> = {};
     for (const node of toFlow(history.doc, viewId).nodes) {
       if (!selection.includes(node.id)) continue;
@@ -656,7 +822,7 @@ export function App() {
     }
     const result = makeDuplicateNodes(history.doc, viewId, selection, { positions });
     if (result.diff.ops.length > 0) pushDiff(result.diff);
-  }, [history, previewDoc, pushDiff, selection, viewId]);
+  }, [history, previewLocked, pushDiff, selection, viewId]);
 
   useEffect(() => {
     const handleDuplicateShortcut = (event: KeyboardEvent) => {
@@ -676,13 +842,13 @@ export function App() {
       ) {
         return;
       }
-      if (selection.length === 0 || previewDoc !== null) return;
+      if (selection.length === 0 || previewLocked) return;
       event.preventDefault();
       duplicateSelected();
     };
     window.addEventListener("keydown", handleDuplicateShortcut);
     return () => window.removeEventListener("keydown", handleDuplicateShortcut);
-  }, [duplicateSelected, previewDoc, selection.length, tab]);
+  }, [duplicateSelected, previewLocked, selection.length, tab]);
 
   const groupSelected = useCallback(() => {
     if (selection.length < 2) return;
@@ -708,7 +874,7 @@ export function App() {
   }, [history, pushDiff, selectedGroup]);
 
   const deleteSelected = useCallback(() => {
-    if (previewDoc !== null) return;
+    if (previewLocked) return;
     if (selection.length === 0 && edgeSelection.length === 0 && groupSelection.length === 0) return;
     const ops = makeRemoveOps(history.doc, {
       nodeIds: selection,
@@ -717,7 +883,7 @@ export function App() {
     });
     if (ops.length === 0) return;
     pushDiff({ origin: "user", summary: `delete selection`, ops });
-  }, [edgeSelection, groupSelection, history, previewDoc, pushDiff, selection]);
+  }, [edgeSelection, groupSelection, history, previewLocked, pushDiff, selection]);
 
   // Cmd/Ctrl+G groups the selection; Cmd/Ctrl+Shift+G ungroups the selected group.
   useEffect(() => {
@@ -732,7 +898,7 @@ export function App() {
       ) {
         return;
       }
-      if (previewDoc !== null) return;
+      if (previewLocked) return;
       event.preventDefault();
       if (event.shiftKey) {
         ungroupSelected();
@@ -742,7 +908,7 @@ export function App() {
     };
     window.addEventListener("keydown", handleGroupShortcut);
     return () => window.removeEventListener("keydown", handleGroupShortcut);
-  }, [groupSelected, previewDoc, tab, ungroupSelected]);
+  }, [groupSelected, previewLocked, tab, ungroupSelected]);
 
   const toggleSelectedGroup = useCallback(() => {
     if (!selectedGroup) return;
@@ -924,6 +1090,11 @@ export function App() {
               hint: "json / yaml / mmd / dot / graphml",
               onSelect: () => fileInputRef.current?.click(),
             },
+            {
+              label: "Open proposal…",
+              hint: ".topox-proposal.json",
+              onSelect: () => proposalInputRef.current?.click(),
+            },
             { label: "Export JSON", hint: ".topox.json", onSelect: exportJson },
             { label: "Export YAML", hint: ".topox.yaml", onSelect: exportYaml },
             { label: "Export Mermaid", hint: ".mmd", onSelect: exportMermaid },
@@ -943,7 +1114,7 @@ export function App() {
             },
           ]}
         />
-        <button style={styles.btn} disabled={previewDoc !== null} onClick={() => setInsertOpen(true)}>
+        <button style={styles.btn} disabled={previewLocked} onClick={() => setInsertOpen(true)}>
           Insert…
         </button>
         <Dropdown
@@ -957,13 +1128,13 @@ export function App() {
             {
               label: "Connect selection",
               hint: "2 nodes → edge",
-              disabled: selection.length !== 2 || previewDoc !== null,
+              disabled: selection.length !== 2 || previewLocked,
               onSelect: connectSelected,
             },
             {
               label: "Duplicate selection",
               hint: "⌘/Ctrl+D",
-              disabled: selection.length === 0 || previewDoc !== null,
+              disabled: selection.length === 0 || previewLocked,
               onSelect: duplicateSelected,
             },
             {
@@ -1048,6 +1219,24 @@ export function App() {
             e.target.value = "";
           }}
         />
+        <input
+          ref={proposalInputRef}
+          type="file"
+          accept=".json,application/json"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            void file.text().then(openProposalFile, (readError: unknown) => {
+              setProposalError(
+                `proposal import failed: ${
+                  readError instanceof Error ? readError.message : String(readError)
+                }`,
+              );
+            });
+            e.target.value = "";
+          }}
+        />
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4 }}>
           <input
             placeholder="search nodes…"
@@ -1114,7 +1303,7 @@ export function App() {
 
       <div style={styles.main}>
         <div style={{ flex: 1, minWidth: 0, position: "relative", display: "flex", flexDirection: "column" }}>
-          {previewDoc && tab === "canvas" ? (
+          {previewBannerVisible && tab === "canvas" ? (
             <div
               style={{
                 display: "flex",
@@ -1127,11 +1316,30 @@ export function App() {
               }}
             >
               <span style={{ fontWeight: 600, color: "var(--warn-text)" }}>
-                Preview · {compiled?.diff.ops.length} op(s) staged — nothing applied yet
+                {proposal !== null
+                  ? `Proposal ${proposal.proposalId} · ${stagedOpCount} op(s) · ${proposalBaseState ?? "invalid"}`
+                  : `Preview · ${stagedOpCount} op(s) staged`}
+                {" — nothing applied yet"}
               </span>
+              {proposal !== null ? (
+                <span style={{ color: "var(--muted)", fontSize: 11, fontFamily: "ui-monospace, monospace" }}>
+                  base {proposal.baseHash} · current {currentGraphHash}
+                </span>
+              ) : null}
+              {proposalError !== null ? (
+                <span style={{ color: "var(--danger)", fontSize: 12 }}>{proposalError}</span>
+              ) : proposalPreview?.error !== undefined ? (
+                <span style={{ color: "var(--danger)", fontSize: 12 }}>{proposalPreview.error}</span>
+              ) : null}
               <button
-                style={{ ...styles.btn, background: "var(--ok)", color: "var(--inverse-text)", borderColor: "var(--ok)" }}
+                style={{
+                  ...styles.btn,
+                  background: canApplyPreview ? "var(--ok)" : "var(--surface)",
+                  color: canApplyPreview ? "var(--inverse-text)" : "var(--muted)",
+                  borderColor: canApplyPreview ? "var(--ok)" : "var(--border)",
+                }}
                 onClick={applyStaged}
+                disabled={!canApplyPreview}
               >
                 Apply
               </button>
@@ -1141,7 +1349,7 @@ export function App() {
           <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
           {tab === "canvas" ? (
             <>
-            {doc.graph.nodes.length === 0 && previewDoc === null ? (
+            {doc.graph.nodes.length === 0 && !previewLocked ? (
               <div
                 style={{
                   position: "absolute",
@@ -1165,7 +1373,8 @@ export function App() {
               viewId={viewId}
               onDiff={pushDiff}
               onSelect={handleSelect}
-              readOnly={previewDoc !== null}
+              readOnly={previewLocked}
+              {...(previewDiffVisual !== undefined ? { diffVisual: previewDiffVisual } : {})}
               {...(resolvedRuntime !== undefined ? { runtime: resolvedRuntime } : {})}
               {...(canvasSearch !== undefined ? { search: canvasSearch } : {})}
               colorMode={theme.resolved}
@@ -1188,7 +1397,7 @@ export function App() {
                 onLive={handleLive}
               />
             ) : null}
-            {previewDoc === null && (selection.length > 0 || edgeSelection.length > 0 || groupSelection.length > 0) ? (
+            {!previewLocked && (selection.length > 0 || edgeSelection.length > 0 || groupSelection.length > 0) ? (
               <div
                 role="toolbar"
                 aria-label="Selection actions"
@@ -1267,21 +1476,21 @@ export function App() {
                       <tr key={row.id}>
                         <td style={{ ...invCell, padding: "6px 10px", fontFamily: "monospace" }}>{row.id}</td>
                         <td style={invCell}>
-                          <InventoryCell value={row.type} mono disabled={previewDoc !== null} onCommit={(v) => editNodeField(row.id, "type", v)} />
+                          <InventoryCell value={row.type} mono disabled={previewLocked} onCommit={(v) => editNodeField(row.id, "type", v)} />
                         </td>
                         <td style={invCell}>
-                          <InventoryCell value={row.label} bold disabled={previewDoc !== null} onCommit={(v) => editNodeField(row.id, "label", v)} />
+                          <InventoryCell value={row.label} bold disabled={previewLocked} onCommit={(v) => editNodeField(row.id, "label", v)} />
                         </td>
                         <td style={invCell}>
-                          <InventoryCell value={row.ref} mono disabled={previewDoc !== null} onCommit={(v) => editNodeField(row.id, "ref", v)} />
+                          <InventoryCell value={row.ref} mono disabled={previewLocked} onCommit={(v) => editNodeField(row.id, "ref", v)} />
                         </td>
                         <td style={invCell}>
-                          <InventoryCell value={row.tags} disabled={previewDoc !== null} onCommit={(v) => editNodeField(row.id, "tags", v)} />
+                          <InventoryCell value={row.tags} disabled={previewLocked} onCommit={(v) => editNodeField(row.id, "tags", v)} />
                         </td>
                         <td style={{ ...invCell, padding: "6px 10px" }}>{row.group}</td>
                         <td style={{ ...invCell, padding: "6px 10px" }}>{row.connections}</td>
                         <td style={invCell}>
-                          <InventoryCell value={row.description} disabled={previewDoc !== null} onCommit={(v) => editNodeField(row.id, "description", v)} />
+                          <InventoryCell value={row.description} disabled={previewLocked} onCommit={(v) => editNodeField(row.id, "description", v)} />
                         </td>
                       </tr>
                     ))}
@@ -1302,7 +1511,37 @@ export function App() {
             <button style={styles.tab(sideTab === "ai")} onClick={() => setSideTab("ai")}>AI</button>
           </div>
           {sideTab === "ai" ? (
-            <AiPanel doc={doc} dsl={dsl} onDslChange={setDsl} compiled={compiled} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {proposal !== null ? (
+                <div style={panelBox}>
+                  <div style={{ fontWeight: 700, marginBottom: 6 }}>Proposal</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>
+                    {proposal.proposalId} · {proposalBaseState ?? "invalid"} · {proposal.diff.ops.length} op(s)
+                  </div>
+                  <div style={{ maxHeight: 160, overflow: "auto", display: "flex", flexDirection: "column", gap: 3 }}>
+                    {proposal.summary.map((item, index) => (
+                      <div key={index} style={{ fontFamily: "ui-monospace, monospace", fontSize: 11.5 }}>
+                        <span
+                          style={{
+                            color: item.sign === "+" ? "var(--ok)" : item.sign === "-" ? "var(--danger)" : "var(--warning)",
+                            fontWeight: 800,
+                          }}
+                        >
+                          {item.sign}
+                        </span>{" "}
+                        {item.text}
+                      </div>
+                    ))}
+                  </div>
+                  {proposalPreview?.issues.length ? (
+                    <div style={{ marginTop: 8, color: "var(--danger)", fontSize: 12 }}>
+                      {proposalPreview.issues.filter((issue) => issue.severity === "error").length} error(s) after preview
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              <AiPanel doc={doc} dsl={dsl} onDslChange={setDsl} compiled={compiled} />
+            </div>
           ) : (
           <>
           <section>

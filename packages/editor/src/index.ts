@@ -10,6 +10,8 @@ export {
   type TopoGroupData,
   type TopoRFNode,
   type SearchProjection,
+  type DiffVisualProjection,
+  type DiffVisualState,
 } from "./convert.js";
 export { autoLayoutDiff, type AutoLayoutOptions, type LayoutDirection } from "./layout.js";
 export {
