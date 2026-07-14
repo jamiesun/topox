@@ -46,7 +46,10 @@ jobs:
           )
 
           for pkg in "${packages[@]}"; do
-            version="$(npm pkg get version --workspace "$pkg" | tr -d '"')"
+            version="$(
+              npm pkg get version --workspace "$pkg" --json |
+                node -e 'const fs = require("node:fs"); const pkg = process.argv[1]; const value = JSON.parse(fs.readFileSync(0, "utf8")); console.log(typeof value === "string" ? value : value[pkg]);' "$pkg"
+            )"
 
             if npm view "$pkg@$version" version >/dev/null 2>&1; then
               echo "skip $pkg@$version: already published"
