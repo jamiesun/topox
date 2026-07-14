@@ -1,6 +1,6 @@
 {
-  "name": "@topox/embed",
-  "version": "0.1.0",
+  "name": "@talkincode/topox-embed",
+  "version": "0.1.1",
   "description": "Framework-agnostic embed for TopoX: mount a topology canvas into any DOM element. React inside, plain JS outside.",
   "license": "MIT",
   "repository": {
@@ -27,8 +27,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@topox/core": "^0.1.0",
-    "@topox/editor": "^0.1.0",
+    "@talkincode/topox-core": "^0.1.1",
+    "@talkincode/topox-editor": "^0.1.1",
     "@xyflow/react": "^12.4.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

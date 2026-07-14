@@ -10,9 +10,9 @@ import type {
   NodeRuntime,
   NodeStyle,
   TopoDoc,
-} from "@topox/core";
-import { makeEdgeUpdate, makeGroupUpdate, makeNodeUpdate } from "@topox/core";
-import { statusPalette } from "@topox/editor";
+} from "@talkincode/topox-core";
+import { makeEdgeUpdate, makeGroupUpdate, makeNodeUpdate } from "@talkincode/topox-core";
+import { statusPalette } from "@talkincode/topox-editor";
 import { IconPickerDialog } from "./IconPicker.js";
 
 const card: CSSProperties = {

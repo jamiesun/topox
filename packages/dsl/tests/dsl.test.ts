@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { applyDiff, emptyDoc, invertDiff, isValid, validateDoc } from "@topox/core";
-import type { TopoDoc } from "@topox/core";
+import { applyDiff, emptyDoc, invertDiff, isValid, validateDoc } from "@talkincode/topox-core";
+import type { TopoDoc } from "@talkincode/topox-core";
 import { compileDsl, docToDsl, tokenize } from "../src/index.js";
 
 function base(): TopoDoc {

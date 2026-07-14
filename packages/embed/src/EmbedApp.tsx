@@ -1,6 +1,6 @@
-import { TopoCanvas } from "@topox/editor";
+import { TopoCanvas } from "@talkincode/topox-editor";
 import { useSyncExternalStore } from "react";
-import type { GraphDiff } from "@topox/core";
+import type { GraphDiff } from "@talkincode/topox-core";
 import type { EmbedStore } from "./store.js";
 
 export interface EmbedAppProps {

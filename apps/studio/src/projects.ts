@@ -1,4 +1,4 @@
-import { validateDoc, type TopoDoc } from "@topox/core";
+import { validateDoc, type TopoDoc } from "@talkincode/topox-core";
 
 /**
  * Local project store. The studio is a static app, so multi-diagram

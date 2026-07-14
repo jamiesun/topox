@@ -1,5 +1,5 @@
-import type { TopoDoc } from "@topox/core";
-import { docToDsl, DSL_GUIDE } from "@topox/dsl";
+import type { TopoDoc } from "@talkincode/topox-core";
+import { docToDsl, DSL_GUIDE } from "@talkincode/topox-dsl";
 
 export interface LlmConfig {
   endpoint: string;

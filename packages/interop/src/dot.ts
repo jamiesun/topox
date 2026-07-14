@@ -2,8 +2,8 @@
  * Graphviz DOT interop for a deliberately small, line-oriented common subset.
  * Export always uses a digraph; undirected TopoX edges use `dir=none`.
  */
-import type { AttrValue, Edge, Group, Node, TopoDoc } from "@topox/core";
-import { emptyDoc } from "@topox/core";
+import type { AttrValue, Edge, Group, Node, TopoDoc } from "@talkincode/topox-core";
+import { emptyDoc } from "@talkincode/topox-core";
 import { hexToUtf8, parseNodeStyleAttribute, utf8ToHex } from "./encoding.js";
 
 export interface DotParseResult {

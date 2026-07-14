@@ -19,13 +19,13 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
                  └────────┬──────────────┬─────────────┬────────┘
                           │              │             │
                 ┌─────────▼────┐  ┌──────▼─────┐ ┌─────▼────────┐
-                │ @topox/editor│  │ @topox/dsl │ │@topox/interop│
+                │ @talkincode/topox-editor│  │ @talkincode/topox-dsl │ │@talkincode/topox-interop│
                 │ React Flow   │  │ DSL → Diff │ │ YAML·Mermaid │
                 │ doc 进 diff 出│  │ 编译器      │ │ DOT·GraphML   │
                 └─────────┬────┘  └──────┬─────┘ └─────┬────────┘
                           └──────────────┼─────────────┘
                                   ┌──────▼───────┐
-                                  │ @topox/core  │  零运行时依赖
+                                  │ @talkincode/topox-core  │  零运行时依赖
                                   │ Graph · Diff · History │
                                   │ Runtime · Timeline · Grouping │
                                   └──────────────┘
@@ -112,7 +112,7 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 
   `connectRuntimeSSE(url)` 与 `connectRuntimeWS(url)` 共用同一 RuntimeEvent JSON 解析/折叠层：SSE 断线重连交给平台 EventSource，WebSocket 使用有界指数退避；两种传输均可注入以便测试，状态契约统一为 connecting/open/retrying/closed。证据：`packages/core/src/{runtime-stream,sse,websocket}.ts`，`packages/core/tests/{sse,websocket}.test.ts`。
 
-- **框架无关嵌入包（@topox/embed）**
+- **框架无关嵌入包（@talkincode/topox-embed）**
 
   `mountTopoView(el, options)` 把画布挂进任意 DOM 元素，宿主无需 React：React/React Flow/CSS 打进产物（ESM + IIFE standalone 双产物）。句柄提供 getDoc/applyDiff/undo/redo/autoLayout/setReadOnly/pushRuntimeEvent/connectSSE/destroy。证据：`packages/embed/src/`，纯 HTML 宿主示例 `examples/embed-plain/`（含演示 SSE 服务器），指南 `docs/embedding.md`。
 
@@ -126,7 +126,7 @@ TopoX 是一个用于**描述、编辑、运行和监控拓扑系统**的引擎�
 - **Runtime 不进文档。** 运行态状态、指标、事件不得写入 TopoDoc、不得进入 diff 历史、不得被序列化进文档导出。
 - **AI 不直接操作画布或文档。** 所有 AI 修改必须走 DSL → GraphDiff → Preview → 确认 → Apply；不存在"AI 直接 setState"的通道。
 - **绕过 Diff 的修改通道不允许存在。** 任何入口（UI、导入、AI、未来的协作）都必须以 GraphDiff 落地（整文档替换式导入除外，且导入必须先过校验）。
-- **内核保持零运行时依赖。** `@topox/core` 不引入任何 npm 运行时依赖；序列化格式保持纯 JSON。
+- **内核保持零运行时依赖。** `@talkincode/topox-core` 不引入任何 npm 运行时依赖；序列化格式保持纯 JSON。
 
 ## 方向与意图
 

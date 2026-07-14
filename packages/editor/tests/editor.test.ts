@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { applyDiff, applyRuntimeEvent, emptyDoc, emptyRuntime, isValid, resolveRuntime, validateDoc } from "@topox/core";
-import type { TopoDoc } from "@topox/core";
+import { applyDiff, applyRuntimeEvent, emptyDoc, emptyRuntime, isValid, resolveRuntime, validateDoc } from "@talkincode/topox-core";
+import type { TopoDoc } from "@talkincode/topox-core";
 import { autoLayoutDiff } from "../src/layout.js";
 import { snapToAlignment } from "../src/alignment.js";
 import { toFlow, groupFlowId, transitiveNodeMembers } from "../src/convert.js";

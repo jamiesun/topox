@@ -1,4 +1,4 @@
-import type { NodeStyle } from "@topox/core";
+import type { NodeStyle } from "@talkincode/topox-core";
 
 export function utf8ToHex(value: string): string {
   return Array.from(new TextEncoder().encode(value), (byte) =>

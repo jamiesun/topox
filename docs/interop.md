@@ -1,6 +1,6 @@
 # Interchange formats
 
-`@topox/interop` converts external graph formats to and from `TopoDoc`. The
+`@talkincode/topox-interop` converts external graph formats to and from `TopoDoc`. The
 parsers intentionally support practical subsets rather than attempting to
 implement every feature of Mermaid, Graphviz, or GraphML.
 

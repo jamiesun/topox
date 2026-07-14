@@ -6,8 +6,8 @@
  * unknown namespaced extension payloads are ignored on import.
  */
 import { DOMParser, type Element as XmlElement, type Node as XmlNode } from "@xmldom/xmldom";
-import type { AttrValue, Edge, Group, Node, NodeLayout, TopoDoc } from "@topox/core";
-import { emptyDoc } from "@topox/core";
+import type { AttrValue, Edge, Group, Node, NodeLayout, TopoDoc } from "@talkincode/topox-core";
+import { emptyDoc } from "@talkincode/topox-core";
 import { parseNodeStyleAttribute, utf8ToHex } from "./encoding.js";
 
 export interface GraphMLParseResult {

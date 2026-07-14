@@ -8,7 +8,7 @@ import type {
   ResolvedRuntime,
   TopoDoc,
   View,
-} from "@topox/core";
+} from "@talkincode/topox-core";
 
 export interface TopoNodeData extends Record<string, unknown> {
   label: string;

@@ -21,7 +21,7 @@
 - 启动后的热添加/卸载；
 - 插件直接提供任意 React 渲染组件；
 - 把插件或 Schema 写入 `TopoDoc`；
-- 在 `@topox/core` 中加入领域校验或插件依赖。
+- 在 `@talkincode/topox-core` 中加入领域校验或插件依赖。
 
 低成本路径是：插件仍由 npm/本地 ESM 分发，Studio 或 embed 在启动时显式注册，
 每个宿主实例拥有独立且随后封存的目录。它解决现有硬编码问题，但不提前建设插件
@@ -29,7 +29,7 @@
 
 ## 2. 不变边界
 
-1. `@topox/core` 继续只认识
+1. `@talkincode/topox-core` 继续只认识
    `Graph/Node/Edge/Group/View/RuntimeState` 六个核心数据对象；`GraphDiff`
    继续只是唯一修改协议。core 保持零运行时依赖。
 2. `Node.type` 仍是开放字符串。未注册类型合法，并使用通用节点与 Inspector。
@@ -41,14 +41,14 @@
 
 ## 3. 包与所有权
 
-后续实现建议新增轻量的 `@topox/plugin-api` 包：
+后续实现建议新增轻量的 `@talkincode/topox-plugin-api` 包：
 
-- 只依赖 `@topox/core` 的类型和纯函数；
+- 只依赖 `@talkincode/topox-core` 的类型和纯函数；
 - 定义下文契约、冲突检测和调用结果校验；
 - 不依赖 React、Studio、dagre、XML/YAML 解析器；
 - 不保存全局状态。
 
-`@topox/editor` 和 `@topox/interop` 可导出内置能力的插件适配器。Studio 与 embed
+`@talkincode/topox-editor` 和 `@talkincode/topox-interop` 可导出内置能力的插件适配器。Studio 与 embed
 各自创建目录并负责调用、错误展示和最终状态提交。该包是宿主 API，不是第七个核心
 数据对象。
 
@@ -90,7 +90,7 @@ export interface PluginCatalog {
 ### 4.1 最小契约
 
 ```ts
-import type { AttrValue, Node, TopoDoc, ValidationIssue } from "@topox/core";
+import type { AttrValue, Node, TopoDoc, ValidationIssue } from "@talkincode/topox-core";
 
 export interface AttrsSchema {
   readonly type: "object";
@@ -172,7 +172,7 @@ validateDocWithPlugins(doc, catalog): ValidationIssue[]
 ### 5.1 最小接口
 
 ```ts
-import type { AttrValue, GraphDiff, TopoDoc } from "@topox/core";
+import type { AttrValue, GraphDiff, TopoDoc } from "@talkincode/topox-core";
 
 export interface LayoutPlugin {
   readonly id: string; // 例如 "topox.dagre"
@@ -219,7 +219,7 @@ Studio 的 Arrange 菜单从目录列出布局器；embed 新增
 v1 文件格式只处理文本。二进制文件、流式解析和远程 URL 不在本设计内。
 
 ```ts
-import type { AttrValue, TopoDoc } from "@topox/core";
+import type { AttrValue, TopoDoc } from "@talkincode/topox-core";
 
 export interface FormatImportResult {
   readonly doc: TopoDoc;
@@ -253,7 +253,7 @@ export interface FileFormatPlugin {
 Studio 的单一 “Import…” 文件选择器接受所有 importer 扩展名，并按扩展名精确
 分发。每个 exporter 生成一个 “Export {displayName}” 菜单项。当前
 JSON/YAML/Mermaid/DOT/GraphML/CSV 逻辑分别包装为内置格式插件，不改变
-`@topox/interop` 的纯转换函数。
+`@talkincode/topox-interop` 的纯转换函数。
 
 导入顺序固定为：
 
@@ -323,7 +323,7 @@ Worker/iframe/独立进程并建立权限模型，明确留给另一份安全设
 ## 9. 端到端伪代码：注册自定义设备类型
 
 ```ts
-import type { TopoPlugin } from "@topox/plugin-api";
+import type { TopoPlugin } from "@talkincode/topox-plugin-api";
 
 export const acmeDevicePlugin: TopoPlugin = {
   apiVersion: 1,

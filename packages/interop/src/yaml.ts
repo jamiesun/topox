@@ -4,8 +4,8 @@
  * YAML is an alternate wire format for the exact same document shape as JSON:
  * `{ graph, views }`. Nothing is lost in a round-trip.
  */
-import type { TopoDoc } from "@topox/core";
-import { validateDoc } from "@topox/core";
+import type { TopoDoc } from "@talkincode/topox-core";
+import { validateDoc } from "@talkincode/topox-core";
 import { parse, stringify } from "yaml";
 
 export function docToYaml(doc: TopoDoc): string {
