@@ -29,7 +29,7 @@
   },
   "dependencies": {
     "@talkincode/topox-core": "^0.1.2",
-    "@xmldom/xmldom": "^0.9.10",
+    "@xmldom/xmldom": "^0.9.12",
     "yaml": "^2.6.1"
   },
   "devDependencies": {
