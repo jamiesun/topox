@@ -28,7 +28,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "@talkincode/topox-core": "^0.1.2",
     "@talkincode/topox-dsl": "^0.1.2",
     "@talkincode/topox-interop": "^0.1.2",
